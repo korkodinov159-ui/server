@@ -1,0 +1,566 @@
+const express = require('express');
+const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const db = new sqlite3.Database('./game.db');
+
+// Создаем таблицы (только самое необходимое)
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS players (
+      vk_id TEXT PRIMARY KEY,
+      name TEXT,
+      avatar TEXT,
+      coins INTEGER DEFAULT 1000,
+      gems INTEGER DEFAULT 50,
+      votes INTEGER DEFAULT 0,
+      characters TEXT DEFAULT '[]',
+      clan_id TEXT DEFAULT NULL,
+      total_earned INTEGER DEFAULT 0,
+      last_daily_bonus INTEGER DEFAULT 0,
+      daily_streak INTEGER DEFAULT 0
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS clans (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      vk_group_id TEXT,
+      owner_vk_id TEXT,
+      avatar_url TEXT DEFAULT ''
+    )
+  `);
+
+  db.run(`CREATE TABLE IF NOT EXISTS auction_lots (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    description TEXT NOT NULL,
+    category TEXT NOT NULL,
+    current_bid INTEGER NOT NULL,
+    start_bid INTEGER NOT NULL,
+    bidders INTEGER DEFAULT 0,
+    ends_at INTEGER NOT NULL,
+    rare INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'active',
+    winner_vk_id TEXT DEFAULT NULL,
+    created_at INTEGER NOT NULL
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS auction_bids (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lot_id INTEGER NOT NULL,
+    vk_id TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    request_id TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    status TEXT DEFAULT 'active'
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS auction_inventory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vk_id TEXT NOT NULL,
+    lot_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    description TEXT NOT NULL,
+    awarded_at INTEGER NOT NULL,
+    UNIQUE(vk_id, lot_id)
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS auction_locks (
+    lot_id INTEGER NOT NULL,
+    vk_id TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (lot_id, vk_id)
+  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS auction_rewards (
+    month TEXT NOT NULL,
+    vk_id TEXT NOT NULL,
+    place INTEGER NOT NULL,
+    reward INTEGER NOT NULL,
+    paid_at INTEGER NOT NULL,
+    PRIMARY KEY (month, vk_id)
+  )`);
+
+});
+
+// Миграция полей серверной экономики для существующих баз.
+[
+  `ALTER TABLE players ADD COLUMN characters TEXT DEFAULT '[]'`,
+  `ALTER TABLE players ADD COLUMN last_income_collect_at INTEGER DEFAULT 0`,
+
+
+  `ALTER TABLE players ADD COLUMN owned_by_vk_id TEXT DEFAULT NULL`,
+  `ALTER TABLE players ADD COLUMN premium INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN is_donut_patron INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN ad_income_buff_expires_at INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN ad_views_today INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN ad_views_day TEXT DEFAULT ''`,
+].forEach((sql) => db.run(sql, () => {}));
+
+// Дополнительные поля и таблицы экономики.
+[
+  `ALTER TABLE players ADD COLUMN has_shield INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN has_chains INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN has_umbrella INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN whip_expires_at INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN career_level INTEGER DEFAULT 0`,
+
+  `ALTER TABLE clans ADD COLUMN level INTEGER DEFAULT 0`,
+  `ALTER TABLE clans ADD COLUMN treasury INTEGER DEFAULT 0`,
+].forEach((sql) => db.run(sql, () => {}));
+db.run(`CREATE TABLE IF NOT EXISTS treasury_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id TEXT, vk_id TEXT, amount INTEGER, type TEXT, created_at INTEGER)`);
+db.run(`CREATE TABLE IF NOT EXISTS tax_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, vk_id TEXT, type TEXT, base_amount INTEGER, tax_amount INTEGER, created_at INTEGER)`);
+db.run(`CREATE TABLE IF NOT EXISTS market_lots (
+  id TEXT PRIMARY KEY,
+  seller_vk_id TEXT NOT NULL,
+  character TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  status TEXT DEFAULT 'active'
+)`);
+db.run(`CREATE TABLE IF NOT EXISTS economy_transactions (
+  request_id TEXT PRIMARY KEY,
+  vk_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+)`);
+
+
+db.run(`ALTER TABLE market_lots ADD COLUMN status TEXT DEFAULT 'active'`, () => {});
+
+// --- API ИГРОКОВ ---
+
+// Клиент не может изменять баланс, подданных или total_earned через синхронизацию.
+app.post('/api/sync', (req, res) => {
+  const vkId = String(req.body?.vk_user_id || '');
+  const { name, avatar } = req.body;
+  if (!vkId) return res.status(401).json({ error: 'Не удалось определить игрока' });
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const finish = () => db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (getErr, player) => getErr ? res.status(500).json({ error: getErr.message }) : res.json({ ...player, slaves: JSON.parse(player.characters || '[]') }));
+    if (row) return db.run(`UPDATE players SET name=?, avatar=? WHERE vk_id=?`, [name || row.name, avatar || row.avatar, vkId], finish);
+    db.run(`INSERT INTO players (vk_id,name,avatar,characters,last_income_collect_at) VALUES (?,?,?,?,?)`, [vkId, name || 'Игрок', avatar || '', '[]', Date.now()], (insertErr) => insertErr ? res.status(500).json({ error: insertErr.message }) : finish());
+  });
+});
+
+app.get('/api/player/:vkId', (req, res) => {
+  const vkId = String(req.query?.vk_user_id || req.params.vkId || '');
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
+    if (err || !row) {
+      const initial = { vk_id: vkId, name: 'Тестовый игрок', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${vkId}`, coins: 100000, votes: 0, characters: [], total_earned: 0, career_level: 0, clan_id: null, last_income_collect_at: Date.now() };
+      return db.run(`INSERT OR IGNORE INTO players (vk_id,name,avatar,coins,characters,total_earned,career_level,last_income_collect_at) VALUES (?,?,?,?,?,?,?,?)`, [initial.vk_id, initial.name, initial.avatar, initial.coins, '[]', 0, 0, initial.last_income_collect_at], (insertErr) => insertErr ? res.status(500).json({ error: insertErr.message }) : res.json({ ...initial, slaves: [] }));
+    }
+    const chars = JSON.parse(row.characters || '[]');
+
+    res.json({ ...row, slaves: chars, characters: chars, hasShield: Boolean(row.has_shield), isDonutPatron: Boolean(row.is_donut_patron), premium: Boolean(row.premium), lastIncomeCollectAt: row.last_income_collect_at || Date.now() });
+
+  });
+});
+
+app.get('/api/market', (req, res) => {
+  db.all(`SELECT * FROM market_lots WHERE status='active' ORDER BY created_at DESC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json((rows || []).map((row) => ({ ...row, character: JSON.parse(row.character || '{}') })));
+  });
+});
+
+const econBasePrice = (income) => Math.max(100, Math.floor(Math.pow(Math.max(1, income), 3) * 0.07));
+const econPrice = (ch) => Math.floor(econBasePrice(ch.income) * Math.pow(2.2, Math.min(ch.resaleCount || 0, 30)) * (ch.boughtBySelf ? 2.2 : 1));
+const econNextIncome = (income) => Math.min(500, Math.max(1, Math.ceil(income * 1.3)));
+const econUser = (req) => String(req.body?.vk_user_id || req.query?.vk_user_id || '');
+db.get(`SELECT COUNT(*) AS count FROM market_lots`, [], (err, row) => {
+  if (err || row.count) return;
+  const names = ['Екатерина Никитина', 'Зоя Королёва', 'Алла Иванова', 'Елена Максимова'];
+  const stmt = db.prepare(`INSERT INTO market_lots (id,seller_vk_id,character,created_at) VALUES (?,?,?,?)`);
+  for (let i = 0; i < 100; i += 1) {
+    const income = Math.min(500, Math.max(1, Math.floor(5 * Math.pow(1.3, i % 18))));
+    const character = { id: `server-${i}`, name: names[i % names.length], avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=server-${i}`, type: 'bot', rarity: 'Common', level: 1, basePower: 10, income, resaleCount: 0, boughtBySelf: false };
+    stmt.run(`server-lot-${i}`, 'system', JSON.stringify(character), Date.now());
+  }
+  stmt.finalize();
+const econJudgment = () => new Date().getDay() === 0;
+
+});
+
+app.post('/api/collect', (req, res) => {
+  const vkId = econUser(req);
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: 'Игрок не найден' });
+    const chars = JSON.parse(row.characters || '[]');
+  const cap = row.is_donut_patron ? 36 : 24;
+  const premiumMultiplier = row.premium ? 1.2 : 1;
+  const donutMultiplier = row.is_donut_patron ? 1.2 : 1;
+  const clanId = row.clan_id;
+  const finishIncome = (clanBonus, adMultiplier) => {
+    const baseIncome = chars.reduce((sum, ch) => sum + Number(ch.income || 0), 0);
+    const income = baseIncome * premiumMultiplier * donutMultiplier * (1 + clanBonus / 100) * (row.owned_by_vk_id ? 0.5 : 1);
+    const elapsed = Math.min(Math.max(0, now - (row.last_income_collect_at || now)), cap * 3600000);
+    const gross = Math.floor(income * elapsed / 3600000 * adMultiplier);
+    const taxRate = chars.length >= 1000 ? 0.05 : chars.length >= 500 ? 0.03 : chars.length >= 100 ? 0.01 : 0;
+    const tax = Math.floor(gross * taxRate);
+    const collected = gross - tax;
+    db.run(`UPDATE players SET coins=coins+?, total_earned=total_earned+?, last_income_collect_at=?, ad_income_buff_expires_at=0 WHERE vk_id=?`, [collected, collected, now, vkId], (updateErr) => {
+      if (updateErr) return res.status(500).json({ error: updateErr.message });
+      db.run(`INSERT INTO tax_transactions (vk_id,type,base_amount,tax_amount,created_at) VALUES (?,?,?,?,?)`, [vkId, 'income', gross, tax, now]);
+      const clanTax = Math.floor(gross * 0.01);
+      if (clanId && clanTax > 0) db.run(`UPDATE clans SET treasury=COALESCE(treasury,0)+? WHERE id=?`, [clanTax, clanId]);
+      res.json({ collected, gross, tax, coins: row.coins + collected, lastIncomeCollectAt: now });
+    });
+  };
+  const day = new Date(now).toISOString().slice(0, 10);
+  const adMultiplier = row.ad_income_buff_expires_at > now && row.ad_views_day === day ? 1.5 : 1;
+  if (!clanId) return finishIncome(0, adMultiplier);
+  db.get(`SELECT level FROM clans WHERE id=?`, [clanId], (clanErr, clan) => finishIncome(!clanErr && clan ? Math.min(150, clan.level || 0) : 0, adMultiplier));
+
+  });
+});
+
+app.post('/api/ad/reward', (req, res) => {
+  const vkId = econUser(req); const now = Date.now(); const day = new Date(now).toISOString().slice(0, 10);
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: 'Игрок не найден' });
+    const views = row.ad_views_day === day ? row.ad_views_today : 0;
+    if (views >= 10) return res.status(429).json({ error: 'Дневной лимит рекламы исчерпан' });
+    db.run(`UPDATE players SET ad_views_today=?, ad_views_day=?, ad_income_buff_expires_at=? WHERE vk_id=?`, [views + 1, day, now + 3600000, vkId], (updateErr) => updateErr ? res.status(500).json({ error: updateErr.message }) : res.json({ multiplier: 1.5, expiresAt: now + 3600000, viewsToday: views + 1 }));
+  });
+});
+app.post('/api/character/buy', (req, res) => {
+  const vkId = econUser(req); const lotId = String(req.body?.lotId || '');
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, player) => {
+    if (err || !player) return res.status(404).json({ error: 'Игрок не найден' });
+    db.get(`SELECT * FROM market_lots WHERE id=? AND status='active'`, [lotId], (lotErr, lot) => {
+      if (lotErr || !lot) return res.status(404).json({ error: 'Лот не найден' });
+      const ch = JSON.parse(lot.character); const price = econPrice(ch); const chars = JSON.parse(player.characters || '[]');
+      if (player.coins < price) return res.status(400).json({ error: 'Недостаточно монет', price });
+      ch.ownerVkId = vkId; ch.ownerName = player.name; ch.income = econNextIncome(ch.income); ch.resaleCount = (ch.resaleCount || 0) + 1;
+      db.serialize(() => {
+        db.run('BEGIN IMMEDIATE TRANSACTION');
+        db.run(`UPDATE players SET coins=coins-?, characters=? WHERE vk_id=?`, [price, JSON.stringify([...chars, ch]), vkId]);
+        if (lot.seller_vk_id !== 'system') db.run(`UPDATE players SET coins=coins+? WHERE vk_id=?`, [Math.floor(econBasePrice(JSON.parse(lot.character).income) * 0.5), lot.seller_vk_id]);
+        db.run(`UPDATE market_lots SET status='sold' WHERE id=?`, [lotId], (updateErr) => updateErr ? db.run('ROLLBACK', () => res.status(500).json({ error: updateErr.message })) : db.run('COMMIT', () => res.json({ success: true, paid: price, tax: 0, character: ch, coins: player.coins - price })));
+      });
+    });
+  });
+});
+
+app.post('/api/character/sell', (req, res) => {
+  const vkId = econUser(req); const charId = String(req.body?.charId || '');
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: 'Игрок не найден' });
+    const chars = JSON.parse(row.characters || '[]'); const index = chars.findIndex((item) => item.id === charId);
+    if (index < 0) return res.status(404).json({ error: 'Подданный не найден' });
+    const character = chars[index]; const price = econPrice(character);
+    if (price >= 20000000) return res.status(400).json({ error: 'Подданного с такой ценой нельзя выставить в общий список' });
+    const lotId = `player-${vkId}-${charId}-${Date.now()}`;
+    const remaining = chars.filter((item) => item.id !== charId);
+    db.serialize(() => {
+      db.run('BEGIN IMMEDIATE TRANSACTION');
+      db.run(`UPDATE players SET characters=? WHERE vk_id=?`, [JSON.stringify(remaining), vkId]);
+      db.run(`INSERT INTO market_lots (id,seller_vk_id,character,created_at) VALUES (?,?,?,?)`, [lotId, vkId, JSON.stringify(character), Date.now()], (insertErr) => {
+        if (insertErr) return db.run('ROLLBACK', () => res.status(500).json({ error: insertErr.message }));
+        db.run('COMMIT', () => res.json({ success: true, lotId, payout: 0 }));
+      });
+    });
+  });
+});
+
+app.post('/api/character/give-away', (req, res) => {
+
+  const vkId = econUser(req); const charId = String(req.body?.charId || '');
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: 'Игрок не найден' });
+    const chars = JSON.parse(row.characters || '[]'); const ch = chars.find((item) => item.id === charId);
+    if (!ch) return res.status(404).json({ error: 'Подданный не найден' });
+    const price = econPrice(ch); const payout = price >= 500000 ? 0 : Math.floor(price * 0.2273 / (econJudgment() ? 2 : 1));
+    db.run(`UPDATE players SET coins=coins+?, characters=? WHERE vk_id=?`, [payout, JSON.stringify(chars.filter((item) => item.id !== charId)), vkId], (updateErr) => updateErr ? res.status(500).json({ error: updateErr.message }) : res.json({ payout, isJudgmentDay: econJudgment(), coins: row.coins + payout }));
+  });
+});
+
+app.post('/api/character/buyout-self', (req, res) => {
+  const vkId = econUser(req);
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: 'Игрок не найден' });
+    if (!row.owned_by_vk_id) return res.status(400).json({ error: 'Игрок свободен' });
+    const price = Math.floor(econBasePrice(1) * 0.5);
+    if (row.coins < price) return res.status(400).json({ error: 'Недостаточно монет', price });
+    db.run(`UPDATE players SET coins=coins-?, owned_by_vk_id=NULL WHERE vk_id=?`, [price, vkId], (updateErr) => updateErr ? res.status(500).json({ error: updateErr.message }) : res.json({ paid: price, coins: row.coins - price }));
+  });
+});
+
+
+
+app.post('/api/career/claim', (req, res) => {
+  const vkId = economyUser(req);
+  const levels = [
+    [0, 0, 0, 10000, 0], [500000, 10, 1000000, 50000, 5], [5000000, 50, 10000000, 250000, 10],
+    [25000000, 100, 50000000, 1000000, 20], [100000000, 500, 250000000, 5000000, 50],
+    [500000000, 1000, 1000000000, 25000000, 100], [2000000000, 2500, 5000000000, 100000000, 500],
+  ];
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
+    if (err || !row) return res.status(404).json({ error: 'Игрок не найден' });
+    const level = row.career_level || 0; const next = levels[level];
+    if (!next) return res.status(400).json({ error: 'Максимальный уровень уже получен' });
+    const chars = JSON.parse(row.characters || '[]');
+    if (row.coins < next[0] || chars.length < next[1] || row.total_earned < next[2]) return res.status(400).json({ error: 'Условия карьеры не выполнены' });
+    db.run(`UPDATE players SET career_level=?, coins=coins+?, votes=votes+? WHERE vk_id=?`, [level + 1, next[3], next[4], vkId], (updateErr) => updateErr ? res.status(500).json({ error: updateErr.message }) : res.json({ success: true, careerLevel: level + 1, rewardCoins: next[3], rewardVotes: next[4], coins: row.coins + next[3], totalEarned: row.total_earned + next[3] }));
+  });
+});
+
+  app.get('/api/top', (req, res) => {
+
+  db.all(`SELECT vk_id, name, avatar, coins, total_earned, characters FROM players ORDER BY coins DESC LIMIT 50`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows.map(r => ({ ...r, characters: JSON.parse(r.characters || '[]') })));
+  });
+});
+
+// 3. Ежедневный бонус
+app.post('/api/daily-bonus', (req, res) => {
+  const { vkId } = req.body;
+  db.get(`SELECT * FROM players WHERE vk_id = ?`, [vkId], (err, player) => {
+    if (err || !player) return res.status(404).json({ error: 'Игрок не найден' });
+    
+    const now = Date.now();
+    const last = player.last_daily_bonus || 0;
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    if (now - last < oneDay) return res.status(400).json({ error: 'Бонус еще не готов' });
+
+    const streak = (player.daily_streak || 0) + 1;
+    const reward = streak * 5000;
+
+    db.run(`UPDATE players SET coins = coins + ?, last_daily_bonus = ?, daily_streak = ? WHERE vk_id = ?`, [reward, now, streak, vkId], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, reward, streak });
+    });
+  });
+});
+
+// --- API КЛАНОВ ---
+
+// 4. Создание клана
+app.post('/api/clan/create', (req, res) => {
+  const { vkId, name, vkGroupId } = req.body;
+  const clanId = Math.random().toString(36).slice(2, 8);
+  const avatarUrl = `https://api.dicebear.com/7.x/shapes/svg?seed=${name}`;
+
+  db.run(`INSERT INTO clans (id, name, vk_group_id, owner_vk_id, avatar_url) VALUES (?, ?, ?, ?, ?)`, [clanId, name, vkGroupId, vkId, avatarUrl], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    db.run(`UPDATE players SET clan_id = ? WHERE vk_id = ?`, [clanId, vkId]);
+    res.json({ success: true, clanId });
+  });
+});
+
+// 5. Список кланов
+app.get('/api/clans', (req, res) => {
+  db.all(`SELECT c.*, COALESCE(SUM(p.total_earned),0) AS total_earned, COUNT(p.vk_id) AS member_count FROM clans c LEFT JOIN players p ON p.clan_id=c.id GROUP BY c.id ORDER BY total_earned DESC`, [], (err, rows) => {
+
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
+// 6. Детали клана
+app.get('/api/clan/:clanId', (req, res) => {
+  const { clanId } = req.params;
+  db.get(`SELECT * FROM clans WHERE id = ?`, [clanId], (err, clan) => {
+    if (err || !clan) return res.status(404).json({ error: 'Клан не найден' });
+    db.all(`SELECT vk_id, name, avatar, coins, characters FROM players WHERE clan_id = ? ORDER BY coins DESC`, [clanId], (err, members) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({
+        ...clan,
+        members: members.map(m => ({ ...m, characters: JSON.parse(m.characters || '[]') }))
+      });
+    });
+  });
+});
+
+// --- API АУКЦИОНА ---
+
+
+const auctionLots = [
+  [1, 'Монетный двор', '🏦', '+5% к доходу на 7 дней', 'Предприятия', 850000, 500000, 12, 18, 1],
+  [2, 'Купон освобождения', '🎟️', 'Освобождение подданного', 'Бонусы', 125000, 100000, 7, 42, 0],
+  [3, 'Рамка «Золотой век»', '🖼️', 'Уникальная рамка на 30 дней', 'Косметика', 300000, 250000, 15, 67, 0],
+  [4, 'Скрытый лот', '❓', 'Откроется после торгов', 'Сюрприз', 50000, 50000, 3, 91, 1],
+  [5, 'Цепи защиты', '🔗', 'Защита подданных на 14 дней', 'Защита', 200000, 150000, 9, 25, 0],
+];
+
+function auctionUser(req) {
+  return String(req.body?.vk_user_id || req.query?.vk_user_id || '');
+}
+function auctionError(res, status, error) { return res.status(status).json({ error }); }
+
+// Заполняем демо-лоты только при первом запуске базы.
+db.serialize(() => {
+  db.get('SELECT COUNT(*) AS count FROM auction_lots', [], (err, row) => {
+    if (err || row.count) return;
+    const now = Date.now();
+    const stmt = db.prepare(`INSERT INTO auction_lots (id,name,emoji,description,category,current_bid,start_bid,bidders,ends_at,rare,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+    auctionLots.forEach((l) => stmt.run(l[0], l[1], l[2], l[3], l[4], l[5], l[6], l[7], now + l[8] * 60000, l[9], now));
+    stmt.finalize();
+  });
+});
+
+function normalizeLot(lot) {
+  return { ...lot, currentBid: lot.current_bid, startBid: lot.start_bid, endsAt: lot.ends_at, rare: Boolean(lot.rare) };
+}
+app.get('/api/auction/lots', (req, res) => {
+  db.all(`SELECT * FROM auction_lots WHERE status = 'active' ORDER BY ends_at ASC`, [], (err, lots) => {
+    if (err) return auctionError(res, 500, err.message);
+    res.json((lots || []).map(normalizeLot));
+  });
+});
+
+
+
+
+app.get('/api/auction/history', (req, res) => {
+  const vkId = auctionUser(req);
+  if (!vkId) return auctionError(res, 401, 'Не удалось определить игрока');
+  db.all(`SELECT b.*, l.name, l.emoji FROM auction_bids b JOIN auction_lots l ON l.id=b.lot_id WHERE b.vk_id=? ORDER BY b.created_at DESC LIMIT 50`, [vkId], (err, rows) => {
+    if (err) return auctionError(res, 500, err.message);
+    res.json(rows || []);
+  });
+});
+
+app.get('/api/auction/inventory', (req, res) => {
+  const vkId = auctionUser(req);
+  if (!vkId) return auctionError(res, 401, 'Не удалось определить игрока');
+  db.all(`SELECT * FROM auction_inventory WHERE vk_id=? ORDER BY awarded_at DESC`, [vkId], (err, rows) => err ? auctionError(res, 500, err.message) : res.json(rows || []));
+});
+
+app.get('/api/auction/rating', (req, res) => {
+
+
+  db.all(`SELECT b.vk_id, p.name, p.avatar, COUNT(DISTINCT b.lot_id) AS wins, SUM(b.amount) AS spent
+    FROM auction_bids b JOIN players p ON p.vk_id=b.vk_id
+    JOIN auction_lots l ON l.id=b.lot_id
+    WHERE b.status='winner' GROUP BY b.vk_id ORDER BY wins DESC, spent DESC LIMIT 100`, [], (err, rows) => {
+      if (err) return auctionError(res, 500, err.message);
+      res.json(rows || []);
+    });
+});
+
+app.post('/api/auction/bid', (req, res) => {
+  const vkId = auctionUser(req);
+  const lotId = Number(req.body?.lotId);
+  const requestId = String(req.body?.requestId || '');
+  if (!vkId || !Number.isInteger(lotId) || !requestId || requestId.length > 100) return auctionError(res, 400, 'Некорректная ставка');
+
+  db.serialize(() => {
+    db.run('BEGIN IMMEDIATE TRANSACTION');
+    db.get(`SELECT * FROM auction_bids WHERE request_id=?`, [requestId], (err, duplicate) => {
+      if (err) return db.run('ROLLBACK', () => auctionError(res, 500, err.message));
+      if (duplicate) return db.run('ROLLBACK', () => res.json({ success: true, duplicate: true, amount: duplicate.amount }));
+      db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, player) => {
+        if (err || !player) return db.run('ROLLBACK', () => auctionError(res, 404, 'Игрок не найден'));
+        db.get(`SELECT * FROM auction_lots WHERE id=? AND status='active'`, [lotId], (err, lot) => {
+          if (err || !lot) return db.run('ROLLBACK', () => auctionError(res, 404, 'Лот недоступен'));
+          if (lot.ends_at <= Date.now()) return db.run('ROLLBACK', () => auctionError(res, 409, 'Торги завершены'));
+          const amount = lot.current_bid + Math.max(10000, Math.ceil(lot.current_bid * 0.05));
+          db.get(`SELECT amount FROM auction_locks WHERE lot_id=? AND vk_id=?`, [lotId, vkId], (err, lock) => {
+            if (err) return db.run('ROLLBACK', () => auctionError(res, 500, err.message));
+            const extra = amount - (lock?.amount || 0);
+            if (extra <= 0 || player.coins < extra) return db.run('ROLLBACK', () => auctionError(res, 400, 'Недостаточно монет'));
+            const now = Date.now();
+            db.run(`UPDATE players SET coins=coins-? WHERE vk_id=?`, [extra, vkId]);
+            db.run(`INSERT INTO auction_bids (lot_id,vk_id,amount,request_id,created_at) VALUES (?,?,?,?,?)`, [lotId, vkId, amount, requestId, now]);
+            db.run(`INSERT INTO auction_locks (lot_id,vk_id,amount,updated_at) VALUES (?,?,?,?) ON CONFLICT(lot_id,vk_id) DO UPDATE SET amount=excluded.amount,updated_at=excluded.updated_at`, [lotId, vkId, amount, now]);
+            db.run(`UPDATE auction_lots SET current_bid=?, bidders=bidders+1, ends_at=CASE WHEN ends_at-?<=30000 THEN ends_at+30000 ELSE ends_at END WHERE id=?`, [amount, now, lotId], (err) => {
+              if (err) return db.run('ROLLBACK', () => auctionError(res, 500, err.message));
+              db.run('COMMIT', (err) => err ? auctionError(res, 500, err.message) : res.json({ success: true, amount, coins: player.coins - extra }));
+            });
+          });
+        });
+      });
+    });
+  });
+});
+
+function closeExpiredLots(done) {
+  db.all(`SELECT * FROM auction_lots WHERE status='active' AND ends_at <= ?`, [Date.now()], (err, lots) => {
+    if (err) return done(err);
+    let index = 0;
+    const next = () => {
+      if (index >= lots.length) return done(null, lots.length);
+      const lot = lots[index++];
+      db.serialize(() => {
+        db.run('BEGIN IMMEDIATE TRANSACTION');
+        db.all(`SELECT * FROM auction_bids WHERE lot_id=? ORDER BY amount DESC, created_at ASC`, [lot.id], (err, bids) => {
+          if (err) return db.run('ROLLBACK', () => done(err));
+          const winner = bids[0];
+          const losers = bids.filter((b) => !winner || b.id !== winner.id);
+          const refund = losers.reduce((sum, b) => sum + b.amount, 0);
+          const finish = () => db.run(`UPDATE auction_lots SET status='closed', winner_vk_id=? WHERE id=?`, [winner?.vk_id || null, lot.id], (updateErr) => {
+            if (updateErr) return db.run('ROLLBACK', () => done(updateErr));
+            db.run('COMMIT', (commitErr) => commitErr ? done(commitErr) : next());
+          });
+
+          const awardWinner = () => {
+            if (!winner) return finish();
+            db.run(`INSERT OR IGNORE INTO auction_inventory (vk_id,lot_id,name,emoji,description,awarded_at) VALUES (?,?,?,?,?,?)`, [winner.vk_id, lot.id, lot.name, lot.emoji, lot.description, Date.now()], (awardErr) => awardErr ? db.run('ROLLBACK', () => done(awardErr)) : finish());
+          };
+          const refundLosers = () => {
+            if (!losers.length) return finish();
+            const placeholders = losers.map(() => '?').join(',');
+            const ids = losers.map((b) => b.vk_id);
+            db.run(`UPDATE players SET coins=coins + (SELECT COALESCE(SUM(amount),0) FROM auction_bids WHERE lot_id=? AND vk_id=players.vk_id AND status='active') WHERE vk_id IN (${placeholders})`, [lot.id, ...ids], (refundErr) => {
+              if (refundErr) return db.run('ROLLBACK', () => done(refundErr));
+              db.run(`UPDATE auction_bids SET status='refunded' WHERE lot_id=? AND status='active' AND id<>?`, [lot.id, winner?.id || -1], (statusErr) => statusErr ? db.run('ROLLBACK', () => done(statusErr)) : awardWinner());
+            });
+          };
+          db.run(`UPDATE auction_bids SET status='winner' WHERE id=?`, [winner?.id || -1], (winnerErr) => {
+            if (winnerErr) return db.run('ROLLBACK', () => done(winnerErr));
+            db.run(`DELETE FROM auction_locks WHERE lot_id=?`, [lot.id], (lockErr) => lockErr ? db.run('ROLLBACK', () => done(lockErr)) : (losers.length ? refundLosers() : awardWinner()));
+          });
+        });
+      });
+    };
+    next();
+  });
+}
+
+function monthKey(date = new Date()) { return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`; }
+function payMonthlyRewards(done) {
+  const month = monthKey(new Date(Date.now() - 86400000));
+  const rewards = [500000000, 300000000, 200000000, 100000000, 50000000, 20000000];
+  const monthStart = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1);
+  db.all(`SELECT b.vk_id, COUNT(*) AS wins, SUM(b.amount) AS spent FROM auction_bids b JOIN auction_lots l ON l.id=b.lot_id WHERE b.status='winner' AND l.created_at>=? GROUP BY b.vk_id ORDER BY wins DESC, spent DESC LIMIT 100`, [monthStart], (err, rows) => {
+    if (err) return done(err);
+    let i = 0;
+    const next = () => {
+      if (i >= rows.length) return done(null, rows.length);
+      const row = rows[i];
+      const place = i + 1;
+      const reward = place === 1 ? rewards[0] : place === 2 ? rewards[1] : place === 3 ? rewards[2] : place <= 10 ? rewards[3] : place <= 25 ? rewards[4] : rewards[5];
+      db.run(`INSERT OR IGNORE INTO auction_rewards (month,vk_id,place,reward,paid_at) VALUES (?,?,?,?,?)`, [month, row.vk_id, place, reward, Date.now()], function (insertErr) {
+        if (insertErr) return done(insertErr);
+        if (!this.changes) { i += 1; return next(); }
+        db.run(`UPDATE players SET coins=coins+? WHERE vk_id=?`, [reward, row.vk_id], (payErr) => { if (payErr) return done(payErr); i += 1; next(); });
+      });
+    };
+    next();
+  });
+}
+
+let lastRewardMonth = '';
+function runAuctionJobs() {
+  closeExpiredLots((err) => { if (err) console.error('Auction close error:', err.message); });
+  const current = monthKey();
+  if (new Date().getUTCDate() === 1 && lastRewardMonth !== current) {
+    lastRewardMonth = current;
+    payMonthlyRewards((err) => { if (err) console.error('Auction rewards error:', err.message); });
+  }
+}
+setInterval(runAuctionJobs, 30000);
+setTimeout(runAuctionJobs, 1000);
+app.listen(3001, () => console.log('🚀 Сервер: http://localhost:3001'));
+
+
+

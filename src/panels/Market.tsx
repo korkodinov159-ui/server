@@ -1,0 +1,179 @@
+import { useState, useMemo, useCallback } from 'react';
+import { Panel, PanelHeader, Div, Avatar, Input } from '@vkontakte/vkui';
+import { Icon24Coins } from '@vkontakte/icons';
+import { useGame } from '../store/gameStore';
+import { useProfile } from '../context/ProfileContext';
+
+import { calcCurrentPrice, MARKET_HIDE_THRESHOLD, isJudgmentDayNow } from '../config';
+import type { MarketLot } from '../types';
+
+const PAGE_SIZE = 50;
+
+export function Market() {
+  const { lots, buyLot, buyCooldownEnd, player } = useGame();
+  const { openProfile } = useProfile();
+
+  const [sortBy, setSortBy] = useState<'asc' | 'desc' | 'none'>('asc');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  const isCooldown = Date.now() < buyCooldownEnd;
+  const cooldownSec = isCooldown ? Math.ceil((buyCooldownEnd - Date.now()) / 1000) : 0;
+  const isJudgmentDay = isJudgmentDayNow();
+
+  const getLotPrice = useCallback(
+    (lot: MarketLot) =>
+      calcCurrentPrice(lot.character.income, lot.character.resaleCount || 0, !!lot.character.boughtBySelf),
+    [],
+  );
+
+  const filteredLots = useMemo(() => {
+    // Скрываем лоты с ценой >= 20M (общий список)
+    let result = lots.filter((l) => getLotPrice(l) < MARKET_HIDE_THRESHOLD);
+
+    if (minPrice) {
+      const min = Number(minPrice);
+      if (Number.isFinite(min)) result = result.filter((l) => getLotPrice(l) >= min);
+    }
+    if (maxPrice) {
+      const max = Number(maxPrice);
+      if (Number.isFinite(max)) result = result.filter((l) => getLotPrice(l) <= max);
+    }
+
+    if (sortBy === 'asc') {
+      result.sort((a, b) => {
+        const d = a.character.income - b.character.income;
+        return d !== 0 ? d : getLotPrice(a) - getLotPrice(b);
+      });
+    } else if (sortBy === 'desc') {
+      result.sort((a, b) => {
+        const d = b.character.income - a.character.income;
+        return d !== 0 ? d : getLotPrice(a) - getLotPrice(b);
+      });
+    }
+
+    return result;
+  }, [lots, minPrice, maxPrice, sortBy, getLotPrice]);
+
+  const displayedLots = filteredLots.slice(0, visibleCount);
+
+  const fmt = (n: number) =>
+    n >= 1_000_000 ? (n / 1_000_000).toFixed(1).replace('.0', '') + 'M'
+    : n >= 1_000 ? (n / 1_000).toFixed(1).replace('.0', '') + 'K'
+    : String(n);
+
+  return (
+    <Panel id="market" className="custom-app-bg">
+      <PanelHeader style={{ background: 'transparent' }}>Рынок</PanelHeader>
+
+      <Div className="page-shell market-page" style={{ padding: '0 16px', paddingBottom: 100 }}>
+        <header className="market-hero">
+          <div className="market-title-row"><h1>Рынок</h1><span className="market-help" aria-label="Справка о рынке">?</span></div>
+          <div className="market-status">ОТКРЫТ · 24/7</div>
+          <div className="market-balance"><Icon24Coins aria-hidden="true" /><strong>{player.coins.toLocaleString('ru-RU')}</strong><span className="market-plus" aria-hidden="true">+</span></div>
+        </header>
+        <div className="market-tabs" role="tablist" aria-label="Фильтр продавцов">
+          <button type="button" role="tab" aria-selected="true" className="market-tab market-tab-active">Все</button>
+          <button type="button" role="tab" aria-selected="false" className="market-tab" disabled>Друзья</button>
+        </div>
+
+        {isJudgmentDay && (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444',
+            borderRadius: 12, padding: 12, marginBottom: 16, textAlign: 'center',
+            color: '#ef4444', fontWeight: 600,
+          }}>
+            🔥 Судный день! Все подданные стоят в 2 раза дешевле!
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <button
+            className="btn-primary"
+            style={{ padding: 10, fontSize: 12, marginTop: 0, background: sortBy === 'asc' ? '#5a7af5' : '#2a2a35', boxShadow: 'none' }}
+            onClick={() => { setSortBy('asc'); setVisibleCount(PAGE_SIZE); }}
+          >
+            ↑ Доход: меньше → больше
+          </button>
+          <button
+            className="btn-primary"
+            style={{ padding: 10, fontSize: 12, marginTop: 0, background: sortBy === 'desc' ? '#5a7af5' : '#2a2a35', boxShadow: 'none' }}
+            onClick={() => { setSortBy('desc'); setVisibleCount(PAGE_SIZE); }}
+          >
+            ↓ Доход: больше → меньше
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <Input placeholder="Цена от" type="number" value={minPrice}
+            onChange={(e) => { setMinPrice(e.target.value); setVisibleCount(PAGE_SIZE); }}
+            style={{ background: '#1a1a21', borderRadius: 12, border: 'none', color: '#fff' }}
+            className="custom-input" />
+          <Input placeholder="Цена до" type="number" value={maxPrice}
+            onChange={(e) => { setMaxPrice(e.target.value); setVisibleCount(PAGE_SIZE); }}
+            style={{ background: '#1a1a21', borderRadius: 12, border: 'none', color: '#fff' }}
+            className="custom-input" />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '65vh', overflowY: 'auto', paddingRight: 4, marginBottom: 16 }}>
+          {displayedLots.map((lot) => {
+            const finalPrice = getLotPrice(lot);
+            const resaleCount = lot.character.resaleCount || 0;
+            return (
+              <div key={lot.id} className="glass-panel market-lot-card" role="button" tabIndex={0} onClick={() => openProfile({ vk_id: lot.character.ownerVkId || lot.sellerVkId || lot.id, name: lot.character.ownerName || lot.sellerName, avatar: lot.character.ownerAvatar || lot.character.avatar, coins: 0, income: lot.character.income, slaves: [lot.character], clanName: undefined })} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 16, marginBottom: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                  <Avatar size={48} src={lot.character.avatar} style={{ border: '2px solid #2a2a35', flexShrink: 0 }} />
+                  <div style={{ marginLeft: 12, minWidth: 0 }}>
+                    <div className="text-value" style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>{lot.character.name}</div>
+                    <div style={{ color: '#4ade80', fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+                      +{lot.character.income} 💰 / ч → после покупки +{Math.min(500, Math.ceil(lot.character.income * 1.3))} 💰 / ч
+                    </div>
+                    <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>
+                      {resaleCount > 0 ? `🔄 перепродажа ×${resaleCount}` : '🆕 новый'}
+                      {lot.character.boughtBySelf ? ' • выкуплен' : ''}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={(event) => { event.stopPropagation(); buyLot(lot.id); }}
+                  disabled={isCooldown}
+                  style={{
+                    background: isCooldown ? '#2a2a35' : 'rgba(90, 122, 245, 0.15)',
+                    border: isCooldown ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(90, 122, 245, 0.5)',
+                    borderRadius: 24, padding: '8px 16px', display: 'flex', alignItems: 'center',
+                    gap: 6, cursor: isCooldown ? 'not-allowed' : 'pointer',
+                    flexShrink: 0, marginLeft: 8,
+                  }}
+                >
+                  {isCooldown ? (
+                    <span style={{ color: '#888', fontSize: 13, fontWeight: 700 }}>Ждите {cooldownSec}с</span>
+                  ) : (
+                    <>
+                      <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#5a7af5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon24Coins style={{ width: 10, height: 10, color: '#fff' }} />
+                      </div>
+                      <span style={{ color: '#5a7af5', fontSize: 15, fontWeight: 800 }}>{fmt(finalPrice)}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+
+          {filteredLots.length === 0 && (
+            <div style={{ textAlign: 'center', color: '#888', marginTop: 20 }}>Нет лотов по заданным критериям</div>
+          )}
+
+          {visibleCount < filteredLots.length && (
+            <button className="btn-primary" style={{ marginTop: 12, background: '#2a2a35', boxShadow: 'none' }}
+              onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}>
+              Показать ещё {PAGE_SIZE} (Всего: {filteredLots.length})
+            </button>
+          )}
+        </div>
+      </Div>
+    </Panel>
+  );
+}
