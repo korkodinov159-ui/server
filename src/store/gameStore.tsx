@@ -108,7 +108,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initGame = async () => {
       let vkId = '', vkName = '', vkAvatar = '';
       try {
-        await bridge.send('VKWebAppInit');
         const userInfo = await bridge.send('VKWebAppGetUserInfo');
         vkId = userInfo.id.toString(); vkName = `${userInfo.first_name} ${userInfo.last_name}`; vkAvatar = userInfo.photo_200 || userInfo.photo_100 || '';
         resetLaunchParamsCache();
