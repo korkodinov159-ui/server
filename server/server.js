@@ -209,6 +209,16 @@ const ensureSystemMarketLots = () => {
 ensureSystemMarketLots();
 
 
+app.get('/api/event/status', (_req, res) => {
+  const now = new Date(); const day = now.getDay(); const hour = now.getHours();
+  let phase = 'INACTIVE'; let endsAt = 0;
+  if (day === 0 && hour >= 12 && hour < 18) { phase = 'DISCOUNT_PHASE'; endsAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0).getTime(); }
+  else if (day === 0 && hour >= 18) { phase = 'WAR_PHASE'; endsAt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).getTime(); }
+  else if (day === 6) { phase = 'DISCOUNT_PHASE'; endsAt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 18, 0, 0).getTime(); }
+  res.json({ phase, endsAt });
+});
+
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });

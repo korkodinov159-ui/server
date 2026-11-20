@@ -1143,5 +1143,11 @@ body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index
 @media(max-width:600px){.page-shell,.profile-page,.page-content{padding-left:16px!important;padding-right:16px!important}.custom-tabbar{left:8px;right:8px;}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}}
 
+.event-banner { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 900; width: min(680px, calc(100vw - 24px)); box-sizing: border-box; padding: 12px 16px; border-radius: 16px; display: flex; justify-content: space-between; gap: 12px; color: #f4f7ff; background: rgba(20,28,48,.96); border: 1px solid var(--ce-border); box-shadow: var(--ce-shadow); font-size: 13px; }
+.event-banner span { color: var(--ce-muted); white-space: nowrap; }
+.event-banner-discount_phase { border-color: rgba(255,200,92,.55); }
+.event-banner-war_phase { border-color: rgba(255,107,125,.55); }
+
+
 .vkuiPanel__in { padding-bottom: calc(78px + env(safe-area-inset-bottom)) !important; }
 

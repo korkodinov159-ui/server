@@ -8,6 +8,8 @@ import { ProfileProvider } from './context/ProfileContext';
 import { PlayerProfileModal } from './components/PlayerProfileModal';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { ToastViewport } from './components/ToastViewport';
+import { EventBanner } from './components/EventBanner';
+
 
 import { Market } from './panels/Market';
 import { Profile } from './panels/Profile';
@@ -69,6 +71,8 @@ export function App() {
               {activePanel === 'regions' && <Regions />}
 
               {activePanel === 'shop' && <Shop />}
+
+              <EventBanner />
 
               <DailyAutoOpener />
               <PlayerProfileModal />
