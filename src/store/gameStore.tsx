@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import bridge from '@vkontakte/vk-bridge';
-import type { Character, Clan, MarketLot, Player, ReferralInfo } from '../types';
+import type { Character, Clan, MarketLot, Player, ReferralInfo, Region, Resources } from '../types';
 import {
   NAMES, AVATARS,
   AD_INCOME_MULTIPLIER, AD_DAILY_LIMIT, UNDER_OWNER_INCOME_MULTIPLIER,
@@ -64,6 +64,9 @@ interface GameState {
   buyoutSelf: () => Promise<void>; releaseCharacter: (charId: string) => void; upgradeCharacter: (charId: string) => void;
   createClan: (name: string, vkGroupId: string) => Promise<void>; joinClan: (clanId: string) => Promise<void>; claimIncome: () => Promise<void>;
   buyLimitCoins: () => void; buyLimitVotes: () => void; buyBoost: (type: any) => void; buyFrame: (frame: any) => Promise<void>;
+  regions: Region[]; resources: Resources;
+  loadRegions: () => Promise<void>; buyRegion: (type: Region['type']) => Promise<void>; upgradeRegion: (id: number) => Promise<void>; collectRegions: () => Promise<void>;
+
   buyCoinsForVotes: (coinsAmount: number, votesCost: number) => Promise<void>; openChest: (type: any) => Character | null; claimAdReward: () => Promise<void>;
   incomePerHour: number; effectiveIncomePerHour: number; clanBonusPercent: number; uncollectedCoins: number; displayCoins: number;
   adBuffActive: boolean; buyCount: number; buyCooldownEnd: number; adCooldownEnd: number; playerAdViews: number;
@@ -88,6 +91,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [buyCount, setBuyCount] = useState(0);
   const [buyCooldownEnd, setBuyCooldownEnd] = useState(0);
   const [adCooldownEnd, setAdCooldownEnd] = useState(0);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [resources, setResources] = useState<Resources>({ coins: 0, ore: 0, wood: 0, food: 0 });
+
   const [playerAdViews, setPlayerAdViews] = useState(0);
   const [clanData, setClanData] = useState<any>(null);
   const vkIdRef = useRef<string>('');
@@ -161,6 +167,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (marketError) {
           console.error('Ошибка загрузки рынка', marketError);
         }
+
+        await loadRegions();
 
         if (data.clan_id) {
           const cData = await apiGet(`/clan/${data.clan_id}`);
@@ -363,6 +371,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const releaseCharacter = (charId: string) => setPlayer({ ...player, characters: player.characters.filter((c) => c.id !== charId) });
   const upgradeCharacter = (_charId: string) => notify('В разработке', 'Прокачка скоро', 'info');
 
+  const loadRegions = async () => {
+    const [regionData, resourceData] = await Promise.all([apiGet<Region[]>('/regions'), apiGet<Resources>('/resources')]);
+    setRegions(regionData || []); setResources(resourceData || { coins: 0, ore: 0, wood: 0, food: 0 });
+  };
+  const buyRegion = async (type: Region['type']) => { await apiPost('/regions/buy', { type }); await loadRegions(); notify('Регион куплен', 'Новый источник дохода добавлен', 'success'); };
+  const upgradeRegion = async (id: number) => { await apiPost('/regions/upgrade', { regionId: id }); await loadRegions(); notify('Регион улучшен', 'Доходность увеличена', 'success'); };
+  const collectRegions = async () => { const data = await apiPost<{ income: Resources }>('/regions/collect'); await loadRegions(); notify('Ресурсы собраны', `+${data.income.ore} руды · +${data.income.wood} дерева · +${data.income.food} еды`, 'success'); };
+
+
   const createClan = async (name: string, vkGroupId: string) => {
     if (player.coins < CLAN_CREATE_COST) { notify('Не хватает', `Нужно ${CLAN_CREATE_COST} 💰`, 'error'); return; }
     try {
@@ -464,7 +481,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <Ctx.Provider value={{
-      player, lots, clans, 
+      regions, resources, loadRegions, buyRegion, upgradeRegion, collectRegions,
       buyLot, sellCharacter, giveAwayCharacter, buyoutSelf, releaseCharacter, upgradeCharacter,
       createClan, joinClan, claimIncome,
       buyLimitCoins, buyLimitVotes, buyBoost, buyFrame, buyCoinsForVotes, openChest, claimAdReward,

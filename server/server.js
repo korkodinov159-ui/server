@@ -124,7 +124,9 @@ db.serialize(() => {
   `ALTER TABLE players ADD COLUMN ad_views_today INTEGER DEFAULT 0`,
   `ALTER TABLE players ADD COLUMN ad_views_day TEXT DEFAULT ''`,
   `ALTER TABLE players ADD COLUMN clan_role TEXT DEFAULT NULL`,
-  `ALTER TABLE players ADD COLUMN clan_joined_at INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN ore INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN wood INTEGER DEFAULT 0`,
+  `ALTER TABLE players ADD COLUMN food INTEGER DEFAULT 0`,
 ].forEach((sql) => db.run(sql, () => {}));
 
 // Дополнительные поля и таблицы экономики.
@@ -225,7 +227,93 @@ app.get('/api/player/:vkId', (req, res) => {
   });
 });
 
+
+ db.run(`CREATE TABLE IF NOT EXISTS regions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_vk_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  level INTEGER DEFAULT 1,
+  last_collected_at INTEGER DEFAULT 0,
+  UNIQUE(owner_vk_id, type, id)
+)`);
+
+const REGION_TYPES = {
+  lumber: { name: 'Лесопилка', emoji: '🌲', resource: 'wood', baseRate: 12, cost: 250000 },
+  mine: { name: 'Шахта', emoji: '⛏️', resource: 'ore', baseRate: 10, cost: 300000 },
+  farm: { name: 'Ферма', emoji: '🌾', resource: 'food', baseRate: 15, cost: 180000 },
+  port: { name: 'Торговый порт', emoji: '⚓', resource: 'coins', baseRate: 3000, cost: 500000 },
+};
+const regionRate = (region) => (REGION_TYPES[region.type]?.baseRate || 0) * Math.pow(1.35, Math.max(0, region.level - 1));
+
+app.get('/api/regions', (req, res) => {
+  const vkId = econUser(req);
+  db.all(`SELECT * FROM regions WHERE owner_vk_id=? ORDER BY id`, [vkId], (err, rows) => err ? res.status(500).json({ error: err.message }) : res.json((rows || []).map((r) => ({ ...r, meta: REGION_TYPES[r.type], rate: regionRate(r) }))));
+});
+
+app.get('/api/resources', (req, res) => {
+  const vkId = econUser(req);
+  db.get(`SELECT coins, ore, wood, food FROM players WHERE vk_id=?`, [vkId], (err, row) => err ? res.status(500).json({ error: err.message }) : res.json(row || { coins: 0, ore: 0, wood: 0, food: 0 }));
+});
+
+app.post('/api/regions/buy', (req, res) => {
+  const vkId = econUser(req); const type = String(req.body?.type || ''); const meta = REGION_TYPES[type];
+  if (!meta) return res.status(400).json({ error: 'Неизвестный тип региона' });
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, player) => {
+    if (err || !player) return res.status(404).json({ error: 'Игрок не найден' });
+    db.get(`SELECT COUNT(*) AS count FROM regions WHERE owner_vk_id=?`, [vkId], (countErr, countRow) => {
+      if (countErr) return res.status(500).json({ error: countErr.message });
+      if (player.coins < meta.cost) return res.status(400).json({ error: 'Недостаточно монет' });
+      db.serialize(() => {
+        db.run('BEGIN IMMEDIATE TRANSACTION');
+        db.run(`UPDATE players SET coins=coins-? WHERE vk_id=?`, [meta.cost, vkId]);
+        db.run(`INSERT INTO regions (owner_vk_id,type,level,last_collected_at) VALUES (?,?,1,?)`, [vkId, type, Date.now()], (insertErr) => insertErr ? db.run('ROLLBACK', () => res.status(400).json({ error: 'Регион уже куплен' })) : db.run('COMMIT', () => res.json({ success: true, type, count: Number(countRow.count) + 1 })));
+      });
+    });
+  });
+});
+
+app.post('/api/regions/upgrade', (req, res) => {
+  const vkId = econUser(req); const regionId = Number(req.body?.regionId);
+  db.get(`SELECT * FROM regions WHERE id=? AND owner_vk_id=?`, [regionId, vkId], (err, region) => {
+    if (err || !region) return res.status(404).json({ error: 'Регион не найден' });
+    if (region.level >= 10) return res.status(400).json({ error: 'Достигнут максимальный уровень' });
+    const cost = Math.floor((REGION_TYPES[region.type]?.cost || 100000) * Math.pow(1.8, region.level));
+    db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (playerErr, player) => {
+      if (playerErr || !player) return res.status(404).json({ error: 'Игрок не найден' });
+      if (player.coins < cost) return res.status(400).json({ error: 'Недостаточно монет' });
+      db.run(`UPDATE players SET coins=coins-? WHERE vk_id=?`, [cost, vkId], (payErr) => payErr ? res.status(500).json({ error: payErr.message }) : db.run(`UPDATE regions SET level=level+1 WHERE id=?`, [regionId], (upErr) => upErr ? res.status(500).json({ error: upErr.message }) : res.json({ success: true, level: region.level + 1, cost })));
+    });
+  });
+});
+
+app.post('/api/regions/collect', (req, res) => {
+  const vkId = econUser(req); const now = Date.now();
+  db.all(`SELECT * FROM regions WHERE owner_vk_id=?`, [vkId], (err, regions) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const income = { coins: 0, ore: 0, wood: 0, food: 0 };
+    for (const region of regions || []) {
+      const hours = Math.max(0, now - Number(region.last_collected_at || now)) / 3600000;
+      const amount = Math.floor(hours * regionRate(region));
+      const key = REGION_TYPES[region.type]?.resource;
+      if (key) income[key] += amount;
+    }
+    const tax = (regions?.length || 0) > 5 ? 0.1 : 0;
+    const coins = Math.floor(income.coins * (1 - tax));
+    db.serialize(() => {
+      db.run('BEGIN IMMEDIATE TRANSACTION');
+      db.run(`UPDATE players SET coins=coins+?, ore=ore+?, wood=wood+?, food=food+? WHERE vk_id=?`, [coins, income.ore, income.wood, income.food, vkId]);
+      db.run(`UPDATE regions SET last_collected_at=? WHERE owner_vk_id=?`, [now, vkId], (updateErr) => updateErr ? db.run('ROLLBACK', () => res.status(500).json({ error: updateErr.message })) : db.run('COMMIT', () => res.json({ success: true, income: { ...income, coins }, tax })));
+    });
+  });
+});
+
 app.get('/api/market', (req, res) => {
+  db.all(`SELECT * FROM market_lots WHERE (status='active' OR status IS NULL OR status='') ORDER BY created_at DESC`, [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json((rows || []).map((row) => ({ ...row, character: JSON.parse(row.character || '{}') })));
+  });
+});
+
   db.all(`SELECT * FROM market_lots WHERE (status='active' OR status IS NULL OR status='') ORDER BY created_at DESC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json((rows || []).map((row) => ({ ...row, character: JSON.parse(row.character || '{}') })));

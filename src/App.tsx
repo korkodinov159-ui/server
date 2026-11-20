@@ -13,7 +13,7 @@ import { Market } from './panels/Market';
 import { Profile } from './panels/Profile';
 import { Top } from './panels/Top';
 import { Auction } from './panels/Auction';
-import { Shop } from './panels/Shop';
+import { Regions } from './panels/Regions';
 
 
 import { ClanDetails } from './panels/ClanDetails';
@@ -64,6 +64,8 @@ export function App() {
                 <ClanDetails clanId={selectedClanId} go={setActivePanel} />
               )}
               {activePanel === 'auction' && <Auction />}
+              {activePanel === 'regions' && <Regions />}
+
               {activePanel === 'shop' && <Shop />}
 
               <DailyAutoOpener />
@@ -83,9 +85,8 @@ export function App() {
                 <button type="button" className={`tab-item ${activePanel === 'market' ? 'active' : ''}`} aria-current={activePanel === 'market' ? 'page' : undefined} onClick={() => setActivePanel('market')}>
                   <span className="tab-icon" aria-hidden="true"><Icon24SartOutline /></span><span>Рынок</span>
                 </button>
-                <button type="button" className={`tab-item ${activePanel === 'shop' ? 'active' : ''}`} aria-current={activePanel === 'shop' ? 'page' : undefined} onClick={() => setActivePanel('shop')}>
-                  <span className="tab-icon" aria-hidden="true"><Icon24Market /></span><span>Магазин</span>
-                </button>
+                <button type="button" className={`tab-item ${activePanel === 'shop' ? 'active' : ''}`} onClick={() => setActivePanel('shop')}><span className="tab-icon" aria-hidden="true"><Icon24Market /></span><span>Магазин</span></button>
+                <button type="button" className={`tab-item ${activePanel === 'regions' ? 'active' : ''}`} onClick={() => setActivePanel('regions')}><span className="tab-icon" aria-hidden="true">🗺️</span><span>Регионы</span></button>
               </nav>
 
             </ProfileProvider>

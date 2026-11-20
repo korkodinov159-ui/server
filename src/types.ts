@@ -43,7 +43,22 @@ export interface ReferralInfo {
   bonusPaid: number;
 }
 
-export interface Player {
+export interface Region {
+  id: number;
+  type: 'lumber' | 'mine' | 'farm' | 'port';
+  level: number;
+  rate: number;
+  meta: { name: string; emoji: string; resource: string; baseRate: number; cost: number };
+  last_collected_at: number;
+}
+
+export interface Resources {
+  coins: number;
+  ore: number;
+  wood: number;
+  food: number;
+}
+
   name: string;
   avatar: string;
   coins: number;
