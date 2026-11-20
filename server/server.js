@@ -136,6 +136,8 @@ db.serialize(() => {
   `ALTER TABLE players ADD COLUMN career_level INTEGER DEFAULT 0`,
 
   `ALTER TABLE clans ADD COLUMN level INTEGER DEFAULT 0`,
+  `ALTER TABLE clans ADD COLUMN active_buff INTEGER DEFAULT 0`,
+
   `ALTER TABLE clans ADD COLUMN treasury INTEGER DEFAULT 0`,
   `ALTER TABLE clans ADD COLUMN extra_members_bought INTEGER DEFAULT 0`,
 ].forEach((sql) => db.run(sql, () => {}));
