@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Panel, PanelHeader, Div } from '@vkontakte/vkui';
+import { useGame } from '../store/gameStore';
 import { apiGet, apiPost } from '../api/client';
+
 
 
 type AuctionLot = {
@@ -66,6 +68,8 @@ export function Auction() {
   const [history, setHistory] = useState<AuctionBid[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const { player } = useGame();
+
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -95,7 +99,7 @@ export function Auction() {
     <Panel id="auction" className="custom-app-bg">
       <PanelHeader style={{ background: 'transparent' }}>Аукцион</PanelHeader>
       <Div className="page-shell auction-page" style={{ padding: '0 16px 100px' }}>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', background: 'linear-gradient(135deg, rgba(90,122,245,0.16), rgba(30,40,70,0.4))', border: '1px solid rgba(90,122,245,0.3)', borderRadius: 20, padding: 18, marginBottom: 18 }}><div style={{ fontSize: 40 }}>🔨</div><div><div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Торги</div><div style={{ fontSize: 12, color: '#8e8e9a', marginTop: 6 }}>Ставки защищены сервером и блокируют монеты до окончания торгов.</div></div></div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', background: 'rgba(22,22,28,0.85)', border: '1px solid rgba(90,122,245,0.3)', borderRadius: 16, padding: '12px 16px', marginBottom: 16 }}><span style={{ color: '#8e8e9a', fontSize: 12, marginRight: 8 }}>Баланс</span><strong style={{ color: '#fff', fontSize: 18 }}>{player.coins.toLocaleString('ru-RU')} 💰</strong></div>
         {error && <div style={{ color: '#fb7185', padding: 12, textAlign: 'center' }}>{error}</div>}
         {msg && <div style={{ background: 'rgba(74,222,128,.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,.35)', borderRadius: 16, padding: 14, marginBottom: 16, textAlign: 'center', fontWeight: 700 }}>{msg}</div>}
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 14, marginBottom: 16 }}>{cats.map((item) => <button key={item} onClick={() => setCat(item)} style={{ border: 'none', borderRadius: 20, padding: '10px 16px', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600, color: cat === item ? '#fff' : '#8e8e9a', background: cat === item ? 'linear-gradient(180deg, #6a8aff, #4b68e6)' : 'rgba(42,42,53,.8)' }}>{item}</button>)}</div>
