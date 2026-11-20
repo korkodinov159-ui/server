@@ -13,6 +13,8 @@ import { Market } from './panels/Market';
 import { Profile } from './panels/Profile';
 import { Top } from './panels/Top';
 import { Auction } from './panels/Auction';
+import { Shop } from './panels/Shop';
+
 import { Regions } from './panels/Regions';
 import { Shop } from './panels/Shop';
 

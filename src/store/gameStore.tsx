@@ -481,7 +481,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <Ctx.Provider value={{
-  player, lots, clans,
+      player, lots, clans,
+      regions, resources, loadRegions, buyRegion, upgradeRegion, collectRegions,
       buyLot, sellCharacter, giveAwayCharacter, buyoutSelf, releaseCharacter, upgradeCharacter,
       createClan, joinClan, claimIncome,
       buyLimitCoins, buyLimitVotes, buyBoost, buyFrame, buyCoinsForVotes, openChest, claimAdReward,
