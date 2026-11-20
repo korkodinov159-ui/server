@@ -4,6 +4,8 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 
+const sqlite3 = require('sqlite3').verbose();
+
 const configuredDbPath = process.env.DB_PATH || path.join(__dirname, 'game.db');
 fs.mkdirSync(path.dirname(configuredDbPath), { recursive: true });
 
