@@ -137,6 +137,7 @@ db.serialize(() => {
 
   `ALTER TABLE clans ADD COLUMN level INTEGER DEFAULT 0`,
   `ALTER TABLE clans ADD COLUMN treasury INTEGER DEFAULT 0`,
+  `ALTER TABLE clans ADD COLUMN extra_members_bought INTEGER DEFAULT 0`,
 ].forEach((sql) => db.run(sql, () => {}));
 db.run(`CREATE TABLE IF NOT EXISTS treasury_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id TEXT, vk_id TEXT, amount INTEGER, type TEXT, created_at INTEGER)`);
 db.run(`CREATE TABLE IF NOT EXISTS tax_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, vk_id TEXT, type TEXT, base_amount INTEGER, tax_amount INTEGER, created_at INTEGER)`);
@@ -449,7 +450,22 @@ app.post('/api/clan/leave', (req, res) => {
   });
 });
 
-// 5. Список кланов
+app.post('/api/clan/shop', (req, res) => {
+  const vkId = econUser(req);
+  const clanId = String(req.body?.clanId || '');
+  const item = String(req.body?.item || '');
+  if (item !== 'level_up' && item !== 'buff_income' && item !== 'buy_slot') return res.status(400).json({ error: 'Неизвестное улучшение' });
+  db.get(`SELECT c.*, p.clan_role, p.coins FROM clans c JOIN players p ON p.clan_id=c.id WHERE c.id=? AND p.vk_id=?`, [clanId, vkId], (err, clan) => {
+    if (err || !clan) return res.status(404).json({ error: 'Клан или игрок не найден' });
+    if (clan.clan_role !== 'leader' && clan.clan_role !== 'deputy') return res.status(403).json({ error: 'Недостаточно прав' });
+    const level = Number(clan.level || 0);
+    const cost = item === 'level_up' ? Math.max(100000, (level + 1) * 100000) : item === 'buff_income' ? 300000 : 500000;
+    if (clan.coins < cost) return res.status(400).json({ error: 'Недостаточно монет' });
+    const update = item === 'level_up' ? `UPDATE clans SET level=COALESCE(level,0)+1, treasury=treasury-? WHERE id=?` : item === 'buff_income' ? `UPDATE clans SET active_buff=1, treasury=treasury-? WHERE id=?` : `UPDATE clans SET extra_members_bought=COALESCE(extra_members_bought,0)+1, treasury=treasury-? WHERE id=?`;
+    db.run(update, [cost, clanId], (updateErr) => updateErr ? res.status(500).json({ error: updateErr.message }) : res.json({ success: true, cost }));
+  });
+});
+
 app.get('/api/clans', (req, res) => {
     db.all(`SELECT c.*, COALESCE(SUM(p.total_earned),0) AS total_earned, COUNT(p.vk_id) AS member_count FROM clans c LEFT JOIN players p ON p.clan_id=c.id GROUP BY c.id ORDER BY total_earned DESC`, [], (err, rows) => {
 

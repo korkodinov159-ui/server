@@ -145,6 +145,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isDonutPatron: data.isDonutPatron ?? false,
           adIncomeBuffExpiresAt: data.adIncomeBuffExpiresAt || 0, 
           lastCollectAt: data.lastIncomeCollectAt || Date.now(),
+          lastDailyClaimAt: Number(data.last_daily_bonus || 0),
+          lastDailyDay: data.last_daily_bonus ? new Date(Number(data.last_daily_bonus)).toISOString().slice(0, 10) : '',
+          dailyStreak: Number(data.daily_streak || 0),
           careerLevel: data.career_level ?? data.careerLevel ?? 0, 
           myRefCode: vkId, 
           invitedBy, 
@@ -365,17 +368,16 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const data = await apiPost<{ clanId: string }>('/clan/create', { name, vkGroupId, avatarUrl: `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(vkGroupId)}` });
       setClans([...clans, { id: data.clanId, name, emoji: '🛡️', members: [player.name], bonusPercent: 8 }]);
-      setPlayer({ ...player, coins: player.coins - CLAN_CREATE_COST, clanId: data.clanId });
+      setPlayer((prev) => ({ ...prev, coins: prev.coins - CLAN_CREATE_COST, clanId: data.clanId }));
       notify('Клан создан', name, 'success');
-      window.location.reload();
     } catch (e: any) { notify('Ошибка', e.message || 'Не удалось создать', 'error'); }
   };
 
   const joinClan = async (clanId: string) => {
     try {
       await apiPost('/clan/join', { clanId });
+      setPlayer((prev) => ({ ...prev, clanId }));
       notify('Успешно', 'Вы вступили в клан!', 'success');
-      window.location.reload();
     } catch (e: any) {
       notify('Ошибка', e.message || 'Не удалось вступить', 'error');
     }
