@@ -20,7 +20,7 @@ export function Home() {
   const [search, setSearch] = useState('');
   const [chestPrize, setChestPrize] = useState<Character | null>(null);
   const [selectedSlave, setSelectedSlave] = useState<Character | null>(null);
-  const [myVkId, setMyVkId] = useState('local-test-user');
+  const [myVkId, setMyVkId] = useState<string>('');
 
   useEffect(() => {
     bridge.send('VKWebAppGetUserInfo')

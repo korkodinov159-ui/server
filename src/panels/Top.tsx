@@ -28,33 +28,6 @@ interface TopClan {
 const RANK_COLORS = ['#fbbf24', '#cbd5e1', '#cd7f32'];
 const RANK_LABELS = ['#1', '#2', '#3'];
 
-const makeDemoSlaves = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => ({
-  id: `${prefix}-slave-${index}`,
-  name: ['Наталья', 'Иван', 'София', 'Семён', 'Максим', 'Кристина'][index % 6],
-  avatar: `https://api.dicebear.com/9.x/personas/svg?seed=${prefix}-${index}`,
-  income: 1 + (index % 6),
-}));
-
-
-const DEMO_PLAYERS: TopPlayer[] = [
-  { vk_id: 'demo-ahmad', name: 'Ahmad Alka ss', avatar: 'https://api.dicebear.com/9.x/personas/svg?seed=Ahmad', coins: 98400000000, income: 500, slaves: makeDemoSlaves('ahmad', 12), total_earned: 98400000000, hasShield: true, clan_name: 'Luxury Zefir' },
-  { vk_id: 'demo-vasiliy', name: 'Vasiliy', avatar: 'https://api.dicebear.com/9.x/personas/svg?seed=Vasiliy', coins: 84900000000, income: 420, slaves: makeDemoSlaves('vasiliy', 10), total_earned: 84900000000, hasShield: false, clan_name: 'Dark Empire' },
-  { vk_id: 'demo-tikhon', name: 'Тихон', avatar: 'https://api.dicebear.com/9.x/personas/svg?seed=Tikhon', coins: 67620000000, income: 380, slaves: makeDemoSlaves('tikhon', 9), total_earned: 67620000000, hasShield: true, clan_name: 'North Star' },
-  { vk_id: 'demo-vitalik', name: 'Vitalik', avatar: 'https://api.dicebear.com/9.x/personas/svg?seed=Vitalik', coins: 65170000000, income: 340, slaves: makeDemoSlaves('vitalik', 8), total_earned: 65170000000, hasShield: false, clan_name: 'Dark Empire' },
-  { vk_id: 'demo-temny', name: 'Тёмный', avatar: 'https://api.dicebear.com/9.x/personas/svg?seed=Temny', coins: 53760000000, income: 310, slaves: makeDemoSlaves('temny', 7), total_earned: 53760000000, hasShield: true, clan_name: 'Dark Empire' },
-  { vk_id: 'demo-bogdan', name: 'Bogdan', avatar: 'https://api.dicebear.com/9.x/personas/svg?seed=Bogdan', coins: 49040000000, income: 280, slaves: makeDemoSlaves('bogdan', 6), total_earned: 49040000000, hasShield: false, clan_name: 'North Star' },
-  { vk_id: 'demo-aleksandr', name: 'Александр', avatar: 'https://api.dicebear.com/9.x/personas/svg?seed=Aleksandr', coins: 38700000000, income: 250, slaves: makeDemoSlaves('aleksandr', 5), total_earned: 38700000000, hasShield: false, clan_name: 'Luxury Zefir' },
-];
-
-const DEMO_CLANS: TopClan[] = [
-  { id: 'demo-luxury', name: 'Luxury Zefir', avatar_url: 'https://api.dicebear.com/9.x/shapes/svg?seed=luxury', total_earned: 167180000000 },
-  { id: 'demo-dark', name: 'Dark Empire', avatar_url: 'https://api.dicebear.com/9.x/shapes/svg?seed=dark', total_earned: 90320000000 },
-  { id: 'demo-euphoria', name: 'Эйфория', avatar_url: 'https://api.dicebear.com/9.x/shapes/svg?seed=euphoria', total_earned: 51120000000 },
-  { id: 'demo-absolute', name: 'A B S O L U T E', avatar_url: 'https://api.dicebear.com/9.x/shapes/svg?seed=absolute', total_earned: 24050000000 },
-  { id: 'demo-brothers', name: 'Браточки', avatar_url: 'https://api.dicebear.com/9.x/shapes/svg?seed=brothers', total_earned: 21640000000 },
-  { id: 'demo-sunrise', name: 'SunRise Empire', avatar_url: 'https://api.dicebear.com/9.x/shapes/svg?seed=sunrise', total_earned: 19800000000 },
-];
-
 function getSeasonEnd(): number {
   const now = new Date();
   const day = now.getDay();
@@ -88,7 +61,7 @@ export function Top({ go, onOpenClan }: { go: (p: string) => void; onOpenClan: (
     bridge
       .send('VKWebAppGetUserInfo')
       .then((info) => setMyVkId(info.id.toString()))
-      .catch(() => setMyVkId('local-test-user'));
+      .catch(() => setMyVkId(''));
   }, []);
 
   const [topPlayers, setTopPlayers] = useState<TopPlayer[]>([]);
@@ -116,10 +89,8 @@ export function Top({ go, onOpenClan }: { go: (p: string) => void; onOpenClan: (
         .then(([pd, cd]) => {
           const serverPlayers = Array.isArray(pd) ? pd : [];
           const serverClans = Array.isArray(cd) ? cd : [];
-          const demoPlayers = import.meta.env.DEV ? DEMO_PLAYERS : [];
-          const demoClans = import.meta.env.DEV ? DEMO_CLANS : [];
-          const playersById = new Map([...demoPlayers, ...serverPlayers].map((item) => [item.vk_id, item]));
-          const clansById = new Map([...demoClans, ...serverClans].map((item) => [item.id, item]));
+          const playersById = new Map(serverPlayers.map((item) => [item.vk_id, item]));
+          const clansById = new Map(serverClans.map((item) => [item.id, item]));
           setTopPlayers([...playersById.values()].sort((a, b) => b.coins - a.coins));
           setTopClans([...clansById.values()].sort((a, b) => b.total_earned - a.total_earned));
           setLoading(false);

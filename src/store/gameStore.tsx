@@ -2,9 +2,9 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import bridge from '@vkontakte/vk-bridge';
 import type { Character, Clan, MarketLot, Player, ReferralInfo } from '../types';
 import {
-  NAMES, AVATARS, CLAN_NAMES, MAX_BASE_INCOME,
+  NAMES, AVATARS, MAX_BASE_INCOME,
   AD_INCOME_MULTIPLIER, AD_DAILY_LIMIT, UNDER_OWNER_INCOME_MULTIPLIER,
-  START_GEMS, CLAN_CREATE_COST, getAccumulationHours,
+  CLAN_CREATE_COST, getAccumulationHours,
 } from '../config';
 import { notify } from '../utils/notifications';
 import { apiGet, apiPost, resetLaunchParamsCache } from '../api/client';
@@ -49,17 +49,10 @@ function getYesterdayKey(): string { const d = new Date(); d.setDate(d.getDate()
 function rand<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
-function makeCharacter(): Character {
-  const income = Math.floor(Math.random() * MAX_BASE_INCOME) + 1;
-  return { id: uid(), name: rand(NAMES), avatar: rand(AVATARS), type: Math.random() > 0.5 ? 'player' : 'bot', rarity: 'Common', level: 1, basePower: income * 10, income, resaleCount: 0, boughtBySelf: false, ownerName: rand(NAMES), ownerAvatar: rand(AVATARS), ownerVkId: null, originalOwnerVkId: null };
-}
 function makeChestCharacter(minIncome: number, maxIncome: number): Character {
   const income = Math.floor(Math.random() * (maxIncome - minIncome + 1)) + minIncome;
   return { id: uid(), name: rand(NAMES), avatar: rand(AVATARS), type: 'bot', rarity: 'Legendary', level: 1, basePower: income * 10, income, resaleCount: 0, boughtBySelf: false };
 }
-function makeLot(): MarketLot { return { id: uid(), character: makeCharacter(), sellerName: rand(NAMES), sellerVkId: '' }; }
-function makeLots(count: number): MarketLot[] { return Array.from({ length: count }, () => makeLot()); }
-function makeClans(): Clan[] { return CLAN_NAMES.map((name) => ({ id: uid(), name, emoji: rand(['⚔️', '🔥', '🛡️', '🐺']), members: [rand(NAMES), rand(NAMES)], bonusPercent: 5 + Math.floor(Math.random() * 10) })); }
 
 interface RefDbEntry { referrer: string; ref: string; name: string; avatar: string; totalEarned: number; joinedAt: number; bonusPaid: number; }
 function loadRefDb(): RefDbEntry[] { try { return JSON.parse(localStorage.getItem('ref_db_v1') || '[]'); } catch { return []; } }
@@ -79,10 +72,9 @@ interface GameState {
   careerStatus: any; claimCareerReward: () => void; shareToStory: () => Promise<void>; storyCooldownEnd: number; adViewsToday: number; dailyAdLimit: number; judgmentStatus: any;
 }
 
-const startingCharacters = Array.from({ length: 5 }, () => makeCharacter());
 const defaultPlayer: Player = {
-  name: 'Загрузка...', avatar: '', coins: 100000, gems: START_GEMS, votes: 2000, characters: startingCharacters, clanId: null, lastCollectAt: Date.now(),
-  maxCharacters: 5000, limitLevel: 0, hasWhip: false, hasChains: false, hasShield: false, hasUmbrella: false, avatarFrame: 'none', lastChestOpen: 0,
+  name: '', avatar: '', coins: 0, gems: 0, votes: 0, characters: [], clanId: null, lastCollectAt: 0,
+  maxCharacters: 0, limitLevel: 0, hasWhip: false, hasChains: false, hasShield: false, hasUmbrella: false, avatarFrame: 'none', lastChestOpen: 0,
   totalEarned: 0, lastDailyClaimAt: 0, dailyStreak: 0, lastDailyDay: '', myRefCode: '', invitedBy: null, referrals: [], referralEarned: 0, careerLevel: 0,
   lastStoryShareAt: 0, adViewsToday: 0, lastAdViewDay: '', ownedByVkId: null, adIncomeBuffMultiplier: 1, adIncomeBuffExpiresAt: 0, isDonutPatron: false,
 };
@@ -91,8 +83,8 @@ const Ctx = createContext<GameState | null>(null);
 
 export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [player, setPlayer] = useState<Player>(defaultPlayer);
-  const [lots, setLots] = useState<MarketLot[]>(() => makeLots(MAX_MARKET_LOTS));
-  const [clans, setClans] = useState<Clan[]>(() => makeClans());
+  const [lots, setLots] = useState<MarketLot[]>([]);
+  const [clans, setClans] = useState<Clan[]>([]);
   const [tick, setTick] = useState(0);
   const [buyCount, setBuyCount] = useState(0);
   const [buyCooldownEnd, setBuyCooldownEnd] = useState(0);
@@ -112,10 +104,9 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         vkId = userInfo.id.toString(); vkName = `${userInfo.first_name} ${userInfo.last_name}`; vkAvatar = userInfo.photo_200 || userInfo.photo_100 || '';
         resetLaunchParamsCache();
       } catch (e) {
-        console.warn('VK Bridge недоступен, используется локальный профиль', e);
-        vkId = 'local-test-user';
-        vkName = 'Тестовый игрок';
-        vkAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=local-test-user';
+        console.error('VK Bridge не вернул пользователя', e);
+        notify('Ошибка', 'Не удалось определить пользователя VK', 'error');
+        return;
       }
 
       vkIdRef.current = vkId;
@@ -161,8 +152,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }));
 
         try {
-          const serverLots = await apiGet<MarketLot[]>('/market');
-          if (Array.isArray(serverLots) && serverLots.length > 0) setLots(serverLots);
+    const serverLots = await apiGet<MarketLot[]>('/market');
+    setLots(Array.isArray(serverLots) ? serverLots : []);
         } catch (marketError) {
           console.error('Ошибка загрузки рынка', marketError);
         }
@@ -273,7 +264,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const judgmentStatus = { endTime: getNextJudgmentDay(), isNow: new Date().getDay() === 0 };
 
   // === РЕФЕРАЛЫ ===
-  const getRefLink = () => `${window.location.origin}${window.location.pathname}?ref=${player.myRefCode || 'local-test-user'}`;
+  const getRefLink = () => `${window.location.origin}${window.location.pathname}?ref=${player.myRefCode}`;
   const shareRefLink = async () => { const link = getRefLink(); try { await bridge.send('VKWebAppShare', { link }); } catch { try { await navigator.clipboard.writeText(link); notify('Скопировано', link, 'success'); } catch { notify('Ссылка', link, 'info'); } } };
   const inviteToProfile = async () => { const link = getRefLink(); try { await bridge.send('VKWebAppAddToProfile', { t: 1, link } as any); notify('Добавлено', 'Кнопка в профиле', 'success'); } catch { await shareRefLink(); } };
 

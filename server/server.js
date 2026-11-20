@@ -173,10 +173,8 @@ app.post('/api/sync', (req, res) => {
 app.get('/api/player/:vkId', (req, res) => {
   const vkId = String(req.query?.vk_user_id || req.params.vkId || '');
   db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
-    if (err || !row) {
-      const initial = { vk_id: vkId, name: 'Тестовый игрок', avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${vkId}`, coins: 100000, votes: 0, characters: [], total_earned: 0, career_level: 0, clan_id: null, last_income_collect_at: Date.now() };
-      return db.run(`INSERT OR IGNORE INTO players (vk_id,name,avatar,coins,characters,total_earned,career_level,last_income_collect_at) VALUES (?,?,?,?,?,?,?,?)`, [initial.vk_id, initial.name, initial.avatar, initial.coins, '[]', 0, 0, initial.last_income_collect_at], (insertErr) => insertErr ? res.status(500).json({ error: insertErr.message }) : res.json({ ...initial, slaves: [] }));
-    }
+  if (err) return res.status(500).json({ error: err.message });
+  if (!row) return res.status(404).json({ error: 'Игрок не найден' });
     const chars = JSON.parse(row.characters || '[]');
 
     res.json({ ...row, slaves: chars, characters: chars, hasShield: Boolean(row.has_shield), isDonutPatron: Boolean(row.is_donut_patron), premium: Boolean(row.premium), lastIncomeCollectAt: row.last_income_collect_at || Date.now() });
@@ -195,19 +193,7 @@ const econBasePrice = (income) => Math.max(100, Math.floor(Math.pow(Math.max(1, 
 const econPrice = (ch) => Math.floor(econBasePrice(ch.income) * Math.pow(2.2, Math.min(ch.resaleCount || 0, 30)) * (ch.boughtBySelf ? 2.2 : 1));
 const econNextIncome = (income) => Math.min(500, Math.max(1, Math.ceil(income * 1.3)));
 const econUser = (req) => String(req.body?.vk_user_id || req.query?.vk_user_id || '');
-db.get(`SELECT COUNT(*) AS count FROM market_lots`, [], (err, row) => {
-  if (err || row.count) return;
-  const names = ['Екатерина Никитина', 'Зоя Королёва', 'Алла Иванова', 'Елена Максимова'];
-  const stmt = db.prepare(`INSERT INTO market_lots (id,seller_vk_id,character,created_at) VALUES (?,?,?,?)`);
-  for (let i = 0; i < 100; i += 1) {
-    const income = Math.min(500, Math.max(1, Math.floor(5 * Math.pow(1.3, i % 18))));
-    const character = { id: `server-${i}`, name: names[i % names.length], avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=server-${i}`, type: 'bot', rarity: 'Common', level: 1, basePower: 10, income, resaleCount: 0, boughtBySelf: false };
-    stmt.run(`server-lot-${i}`, 'system', JSON.stringify(character), Date.now());
-  }
-  stmt.finalize();
-const econJudgment = () => new Date().getDay() === 0;
 
-});
 
 app.post('/api/collect', (req, res) => {
   const vkId = econUser(req);

@@ -31,13 +31,12 @@ async function withAuth<T extends Record<string, any>>(
   payload: T,
 ): Promise<T & { vk_user_id?: string; sign?: string }> {
   const params = await getLaunchParams();
+  if (!params.vk_user_id) throw new Error('VK user is not authenticated');
+
   const auth: Record<string, string> = {};
-  if (params.vk_user_id) {
-    for (const [k, v] of Object.entries(params)) {
-      if (k.startsWith('vk_') || k === 'sign') auth[k] = v;
-    }
+  for (const [k, v] of Object.entries(params)) {
+    if (k.startsWith('vk_') || k === 'sign') auth[k] = v;
   }
-  if (!auth.vk_user_id && import.meta.env.DEV) auth.vk_user_id = 'local-test-user';
 
   return { ...payload, ...auth } as T & { vk_user_id?: string; sign?: string };
 }
