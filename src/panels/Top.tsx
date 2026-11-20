@@ -102,12 +102,7 @@ export function Top({ go, onOpenClan }: { go: (p: string) => void; onOpenClan: (
     return () => clearInterval(refresh);
   }, []);
 
-  const isCurrentPlayer = (candidate: TopPlayer) =>
-    candidate.vk_id === myVkId ||
-    (!!player.name && candidate.name === player.name) ||
-    (!!player.avatar && candidate.avatar === player.avatar) ||
-    (player.name !== 'Загрузка...' && candidate.name === player.name) ||
-    (player.coins > 0 && candidate.coins === player.coins);
+  const isCurrentPlayer = (candidate: TopPlayer) => candidate.vk_id === myVkId;
 
   const top3 = topPlayers.slice(0, 3);
   const rest = topPlayers.slice(3).filter((p) => !isCurrentPlayer(p));
@@ -117,16 +112,30 @@ export function Top({ go, onOpenClan }: { go: (p: string) => void; onOpenClan: (
     [topPlayers, myVkId, player.name, player.avatar],
   );
 
-  const openPlayer = (p: TopPlayer) =>
-    openProfile({
-      vk_id: p.vk_id,
-      name: p.name,
-      avatar: p.avatar,
-      coins: p.coins,
-      income: p.income,
-      slaves: p.slaves || [],
-      clanName: p.clan_name || undefined,
-    });
+  const openPlayer = async (p: TopPlayer) => {
+    try {
+      const data = await apiGet<any>(`/player/${p.vk_id}`);
+      openProfile({
+        vk_id: p.vk_id,
+        name: data.name || p.name,
+        avatar: data.avatar || p.avatar,
+        coins: Number(data.coins ?? p.coins),
+        income: (data.slaves || data.characters || []).reduce((sum: number, ch: any) => sum + Number(ch.income || 0), 0),
+        slaves: data.slaves || data.characters || p.slaves || [],
+        clanName: p.clan_name || undefined,
+      });
+    } catch {
+      openProfile({
+        vk_id: p.vk_id,
+        name: p.name,
+        avatar: p.avatar,
+        coins: p.coins,
+        income: p.income || 0,
+        slaves: p.slaves || [],
+        clanName: p.clan_name || undefined,
+      });
+    }
+  };
 
   const tabStyle = (active: boolean) => ({
     flex: 1,

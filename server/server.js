@@ -235,6 +235,7 @@ const econUser = (req) => String(req.body?.vk_user_id || req.query?.vk_user_id |
 
 app.post('/api/collect', (req, res) => {
   const vkId = econUser(req);
+  const now = Date.now();
   db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
     if (err || !row) return res.status(404).json({ error: 'Игрок не найден' });
     const chars = JSON.parse(row.characters || '[]');
