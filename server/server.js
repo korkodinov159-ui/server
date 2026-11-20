@@ -107,6 +107,11 @@ db.serialize(() => {
     reward INTEGER NOT NULL,
     paid_at INTEGER NOT NULL,
     PRIMARY KEY (month, vk_id)
+  `ALTER TABLE auction_lots ADD COLUMN seller_vk_id TEXT DEFAULT NULL`,
+  `ALTER TABLE auction_lots ADD COLUMN resource_type TEXT DEFAULT NULL`,
+  `ALTER TABLE auction_lots ADD COLUMN resource_amount INTEGER DEFAULT 0`,
+  `ALTER TABLE auction_lots ADD COLUMN buyout_price INTEGER DEFAULT 0`,
+
   )`);
 
 });
@@ -640,9 +645,39 @@ app.get('/api/auction/rating', (req, res) => {
     });
 });
 
+app.post('/api/auction/resource-lot', (req, res) => {
+  const vkId = auctionUser(req); const resource = String(req.body?.resource || ''); const amount = Number(req.body?.amount); const price = Number(req.body?.price);
+  if (!vkId || !['ore', 'wood', 'food'].includes(resource) || !Number.isInteger(amount) || amount <= 0 || !Number.isInteger(price) || price <= 0) return auctionError(res, 400, 'Некорректный ресурсный лот');
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, player) => {
+    if (err || !player) return auctionError(res, 404, 'Игрок не найден');
+    if (Number(player[resource] || 0) < amount) return auctionError(res, 400, 'Недостаточно ресурса');
+    db.run(`UPDATE players SET ${resource}=${resource}-? WHERE vk_id=?`, [amount, vkId], (updateErr) => {
+      if (updateErr) return auctionError(res, 500, updateErr.message);
+      const now = Date.now();
+      db.run(`INSERT INTO auction_lots (name,emoji,description,category,current_bid,start_bid,buyout_price,bidders,ends_at,rare,status,seller_vk_id,resource_type,resource_amount,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [`${resource} · ${amount}`, resource === 'ore' ? '⛏️' : resource === 'wood' ? '🪵' : '🍞', 'Ресурсный лот игрока', 'Ресурсы', price, price, price, 0, now + 7 * 86400000, 0, 'active', vkId, resource, amount, now], (insertErr) => insertErr ? auctionError(res, 500, insertErr.message) : res.json({ success: true }));
+    });
+  });
+});
+
+app.post('/api/auction/resource-buy', (req, res) => {
+  const vkId = auctionUser(req); const lotId = Number(req.body?.lotId);
+  db.serialize(() => {
+    db.run('BEGIN IMMEDIATE TRANSACTION');
+    db.get(`SELECT * FROM auction_lots WHERE id=? AND category='Ресурсы' AND status='active'`, [lotId], (err, lot) => {
+      if (err || !lot) return db.run('ROLLBACK', () => auctionError(res, 404, 'Ресурсный лот недоступен'));
+      if (lot.seller_vk_id === vkId) return db.run('ROLLBACK', () => auctionError(res, 400, 'Нельзя купить свой лот'));
+      db.get(`SELECT * FROM players WHERE vk_id IN (?,?)`, [vkId, lot.seller_vk_id], (playersErr, rows) => {
+        if (playersErr || !rows?.length) return db.run('ROLLBACK', () => auctionError(res, 404, 'Игрок не найден'));
+        const buyer = rows.find((p) => p.vk_id === vkId); const seller = rows.find((p) => p.vk_id === lot.seller_vk_id);
+        if (!buyer || buyer.coins < lot.buyout_price) return db.run('ROLLBACK', () => auctionError(res, 400, 'Недостаточно монет'));
+        const r = lot.resource_type; db.run(`UPDATE players SET coins=coins-? WHERE vk_id=?`, [lot.buyout_price, vkId]); db.run(`UPDATE players SET coins=coins+? , ${r}=${r}+? WHERE vk_id=?`, [lot.buyout_price, lot.resource_amount, lot.seller_vk_id]);
+        db.run(`UPDATE players SET ${r}=${r}+? WHERE vk_id=?`, [lot.resource_amount, vkId], (addErr) => addErr ? db.run('ROLLBACK', () => auctionError(res, 500, addErr.message)) : db.run(`UPDATE auction_lots SET status='sold', winner_vk_id=? WHERE id=?`, [vkId, lotId], (closeErr) => closeErr ? db.run('ROLLBACK', () => auctionError(res, 500, closeErr.message)) : db.run('COMMIT', () => res.json({ success: true, resource: r, amount: lot.resource_amount, price: lot.buyout_price }))));
+      });
+    });
+  });
+});
+
 app.post('/api/auction/bid', (req, res) => {
-  const vkId = auctionUser(req);
-  const lotId = Number(req.body?.lotId);
   const requestId = String(req.body?.requestId || '');
   if (!vkId || !Number.isInteger(lotId) || !requestId || requestId.length > 100) return auctionError(res, 400, 'Некорректная ставка');
 

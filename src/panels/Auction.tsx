@@ -15,7 +15,10 @@ type AuctionLot = {
   startBid: number;
   bidders: number;
   endsAt: number;
-  rare?: boolean;
+  type?: string;
+  resourceType?: string;
+  resourceAmount?: number;
+  buyoutPrice?: number;
 };
 
 type ServerLot = AuctionLot & { status: string };
@@ -80,9 +83,13 @@ export function Auction() {
     return () => clearInterval(t);
   }, []);
 
-  const cats = ['Все', ...Array.from(new Set(lots.map((l) => l.category)))];
-  const visible = useMemo(() => (cat === 'Все' ? lots : lots.filter((l) => l.category === cat)), [cat, lots]);
+  const categoryLabels: Record<string, string> = { Все: 'Все', Ресурсы: 'Ресурсы', Бусты: 'Бусты', Элита: 'Элита', События: 'События', Лутбоксы: 'Лутбоксы' };
+  const cats = Object.keys(categoryLabels);
 
+  const visible = useMemo(() => (cat === 'Все' ? lots : lots.filter((l) => l.category === cat)), [cat, lots]);
+  const buyResourceLot = async (lot: AuctionLot) => {
+    try { await apiPost('/auction/resource-buy', { lotId: lot.id }); setLots((items) => items.filter((item) => item.id !== lot.id)); setMsg('Ресурс куплен'); } catch (e) { setError(e instanceof Error ? e.message : 'Покупка не удалась'); }
+  };
   const bid = async (lot: AuctionLot) => {
     const requestId = `${lot.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
@@ -103,7 +110,7 @@ export function Auction() {
         {error && <div style={{ color: '#fb7185', padding: 12, textAlign: 'center' }}>{error}</div>}
         {msg && <div style={{ background: 'rgba(74,222,128,.12)', color: '#4ade80', border: '1px solid rgba(74,222,128,.35)', borderRadius: 16, padding: 14, marginBottom: 16, textAlign: 'center', fontWeight: 700 }}>{msg}</div>}
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 14, marginBottom: 16 }}>{cats.map((item) => <button key={item} onClick={() => setCat(item)} style={{ border: 'none', borderRadius: 20, padding: '10px 16px', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600, color: cat === item ? '#fff' : '#8e8e9a', background: cat === item ? 'linear-gradient(180deg, #6a8aff, #4b68e6)' : 'rgba(42,42,53,.8)' }}>{item}</button>)}</div>
-        {loading ? <div style={{ textAlign: 'center', color: '#8e8e9a', padding: 40 }}>Загрузка торгов...</div> : visible.map((lot) => <LotCard key={lot.id} lot={lot} myBid={bids[lot.id]} now={now} onBid={bid} />)}
+        {loading ? <div style={{ textAlign: 'center', color: '#8e8e9a', padding: 40 }}>Загрузка торгов...</div> : visible.map((lot) => lot.category === 'Ресурсы' ? <LotCard key={lot.id} lot={lot} myBid={bids[lot.id]} now={now} onBid={buyResourceLot} /> : <LotCard key={lot.id} lot={lot} myBid={bids[lot.id]} now={now} onBid={bid} />)}
         {!loading && history.length > 0 && <div style={{ marginTop: 20 }}><div className="text-value" style={{ marginBottom: 10 }}>История ставок</div>{history.slice(0, 10).map((item) => <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(22,22,28,.7)', borderBottom: '1px solid rgba(255,255,255,.05)', fontSize: 12 }}><span>{item.emoji} {item.name}</span><b>{fmt(item.amount)} 💰</b></div>)}</div>}
       </Div>
     </Panel>
