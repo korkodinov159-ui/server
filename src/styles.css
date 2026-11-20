@@ -1142,3 +1142,6 @@ body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index
 .game-toast { width:100%; box-sizing:border-box; border-radius:var(--ce-radius-md)!important; background:rgba(16,22,38,.96)!important; border:1px solid var(--ce-border)!important; box-shadow:var(--ce-shadow)!important; }
 @media(max-width:600px){.page-shell,.profile-page,.page-content{padding-left:16px!important;padding-right:16px!important}.custom-tabbar{left:8px;right:8px;}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important;}}
+
+.vkuiPanel__in { padding-bottom: calc(78px + env(safe-area-inset-bottom)) !important; }
+
