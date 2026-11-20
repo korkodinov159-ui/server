@@ -332,25 +332,36 @@ app.post('/api/career/claim', (req, res) => {
   });
 });
 
-// 3. Ежедневный бонус
+// Ежедневная награда хранится на сервере и начисляется атомарно.
 app.post('/api/daily-bonus', (req, res) => {
-  const { vkId } = req.body;
-  db.get(`SELECT * FROM players WHERE vk_id = ?`, [vkId], (err, player) => {
-    if (err || !player) return res.status(404).json({ error: 'Игрок не найден' });
-    
+  const vkId = econUser(req);
+  if (!vkId) return res.status(401).json({ error: 'Не удалось определить игрока' });
+
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, player) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!player) return res.status(404).json({ error: 'Игрок не найден' });
+
     const now = Date.now();
-    const last = player.last_daily_bonus || 0;
-    const oneDay = 24 * 60 * 60 * 1000;
+    const dayMs = 24 * 60 * 60 * 1000;
+    const lastClaim = Number(player.last_daily_bonus || 0);
+    if (now - lastClaim < dayMs) {
+      return res.status(400).json({ error: 'Бонус еще не готов', nextClaimAt: lastClaim + dayMs });
+    }
 
-    if (now - last < oneDay) return res.status(400).json({ error: 'Бонус еще не готов' });
+    const previousStreak = Number(player.daily_streak || 0);
+    const streak = now - lastClaim <= 48 * 60 * 60 * 1000 ? Math.min(previousStreak + 1, 7) : 1;
+    const rewards = [10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+    const reward = rewards[streak - 1];
 
-    const streak = (player.daily_streak || 0) + 1;
-    const reward = streak * 5000;
-
-    db.run(`UPDATE players SET coins = coins + ?, last_daily_bonus = ?, daily_streak = ? WHERE vk_id = ?`, [reward, now, streak, vkId], (err) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ success: true, reward, streak });
-    });
+    db.run(
+      `UPDATE players SET coins=coins+?, votes=votes+?, total_earned=total_earned+?, last_daily_bonus=?, daily_streak=? WHERE vk_id=? AND last_daily_bonus=?`,
+      [reward, streak >= 3 ? (streak === 3 ? 5 : streak === 4 ? 5 : streak === 5 ? 10 : streak === 6 ? 15 : 50) : 0, reward, now, streak, vkId, lastClaim],
+      function (updateErr) {
+        if (updateErr) return res.status(500).json({ error: updateErr.message });
+        if (!this.changes) return res.status(400).json({ error: 'Бонус уже был получен' });
+        res.json({ success: true, reward, streak, coins: player.coins + reward, votes: player.votes + (streak >= 3 ? (streak === 3 ? 5 : streak === 4 ? 5 : streak === 5 ? 10 : streak === 6 ? 15 : 50) : 0), totalEarned: player.total_earned + reward, lastDailyBonus: now });
+      },
+    );
   });
 });
 

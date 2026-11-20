@@ -231,17 +231,24 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const nextReward = DAILY_REWARDS[todayIndex] ?? DAILY_REWARDS[0];
   const dailyStatus = { canClaim: isNewDay, streak: effectiveStreak, nextReward, todayIndex, isNewDay };
 
-  const claimDailyReward = () => {
+  const claimDailyReward = async () => {
     if (!isNewDay) { notify('Уже получено', 'Возвращайся завтра', 'info'); return; }
-    let newStreak: number;
-    if (player.lastDailyDay === '') newStreak = 1;
-    else if (player.lastDailyDay === yesterdayKey) newStreak = player.dailyStreak >= 7 ? 1 : player.dailyStreak + 1;
-    else if (hoursSinceLastClaim > DAILY_RESET_HOURS) newStreak = 1;
-    else newStreak = Math.min(player.dailyStreak + 1, 7);
 
-    const reward = DAILY_REWARDS[todayIndex] ?? DAILY_REWARDS[0];
-    setPlayer({ ...player, coins: player.coins + reward.coins, votes: player.votes + reward.votes, totalEarned: (player.totalEarned || 0) + reward.coins, lastDailyClaimAt: Date.now(), lastDailyDay: todayKey, dailyStreak: newStreak });
-    notify('Ежедневная награда', `День ${reward.day}: +${reward.coins.toLocaleString()} 💰`, 'success');
+    try {
+      const data = await apiPost<{ reward: number; streak: number; coins: number; votes: number; totalEarned: number }>('/daily-bonus');
+      setPlayer((prev) => ({
+        ...prev,
+        coins: data.coins,
+        votes: data.votes,
+        totalEarned: data.totalEarned,
+        lastDailyClaimAt: Date.now(),
+        lastDailyDay: todayKey,
+        dailyStreak: data.streak,
+      }));
+      notify('Ежедневная награда', `День ${data.streak}: +${data.reward.toLocaleString()} 💰`, 'success');
+    } catch (e) {
+      notify('Ошибка', e instanceof Error ? e.message : 'Награда не получена', 'error');
+    }
   };
 
   // === КАРЬЕРА ===
