@@ -150,6 +150,9 @@ db.run(`CREATE TABLE IF NOT EXISTS economy_transactions (
 )`);
 
 
+db.run(`DELETE FROM players WHERE vk_id LIKE 'demo-%' OR vk_id='local-test-user'`);
+db.run(`DELETE FROM market_lots WHERE seller_vk_id='system' OR id LIKE 'server-lot-%'`);
+
 db.run(`ALTER TABLE market_lots ADD COLUMN status TEXT DEFAULT 'active'`, () => {});
 
 app.get('/health', (_req, res) => {

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import bridge from '@vkontakte/vk-bridge';
 import type { Character, Clan, MarketLot, Player, ReferralInfo } from '../types';
 import {
-  NAMES, AVATARS, MAX_BASE_INCOME,
+  NAMES, AVATARS,
   AD_INCOME_MULTIPLIER, AD_DAILY_LIMIT, UNDER_OWNER_INCOME_MULTIPLIER,
   CLAN_CREATE_COST, getAccumulationHours,
 } from '../config';
