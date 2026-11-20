@@ -15,7 +15,7 @@ type AuctionLot = {
   startBid: number;
   bidders: number;
   endsAt: number;
-  type?: string;
+  rare?: boolean;
   resourceType?: string;
   resourceAmount?: number;
   buyoutPrice?: number;

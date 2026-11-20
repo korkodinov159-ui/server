@@ -107,16 +107,17 @@ db.serialize(() => {
     reward INTEGER NOT NULL,
     paid_at INTEGER NOT NULL,
     PRIMARY KEY (month, vk_id)
-  `ALTER TABLE auction_lots ADD COLUMN seller_vk_id TEXT DEFAULT NULL`,
-  `ALTER TABLE auction_lots ADD COLUMN resource_type TEXT DEFAULT NULL`,
-  `ALTER TABLE auction_lots ADD COLUMN resource_amount INTEGER DEFAULT 0`,
-  `ALTER TABLE auction_lots ADD COLUMN buyout_price INTEGER DEFAULT 0`,
-
   )`);
 
 });
 
-// Миграция полей серверной экономики для существующих баз.
+[
+  `ALTER TABLE auction_lots ADD COLUMN seller_vk_id TEXT DEFAULT NULL`,
+  `ALTER TABLE auction_lots ADD COLUMN resource_type TEXT DEFAULT NULL`,
+  `ALTER TABLE auction_lots ADD COLUMN resource_amount INTEGER DEFAULT 0`,
+  `ALTER TABLE auction_lots ADD COLUMN buyout_price INTEGER DEFAULT 0`,
+].forEach((sql) => db.run(sql, () => {}));
+
 [
   `ALTER TABLE players ADD COLUMN characters TEXT DEFAULT '[]'`,
   `ALTER TABLE players ADD COLUMN last_income_collect_at INTEGER DEFAULT 0`,
