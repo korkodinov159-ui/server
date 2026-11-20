@@ -152,7 +152,10 @@ db.run(`CREATE TABLE IF NOT EXISTS economy_transactions (
 
 db.run(`ALTER TABLE market_lots ADD COLUMN status TEXT DEFAULT 'active'`, () => {});
 
-// --- API ИГРОКОВ ---
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
 
 // Клиент не может изменять баланс, подданных или total_earned через синхронизацию.
 app.post('/api/sync', (req, res) => {
@@ -579,8 +582,8 @@ function runAuctionJobs() {
 }
 setInterval(runAuctionJobs, 30000);
 setTimeout(runAuctionJobs, 1000);
-const port = Number(process.env.PORT) || 3001;
-app.listen(port, () => console.log(`🚀 Сервер: http://localhost:${port}`));
+const port = Number(process.env.PORT) || 3000;
+app.listen(port, '0.0.0.0', () => console.log(`🚀 Сервер слушает 0.0.0.0:${port}`));
 
 
 
