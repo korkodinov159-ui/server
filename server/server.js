@@ -209,7 +209,7 @@ app.post('/api/sync', (req, res) => {
 });
 
 app.get('/api/player/:vkId', (req, res) => {
-  const vkId = String(req.query?.vk_user_id || req.params.vkId || '');
+  const vkId = String(req.params.vkId || req.query?.vk_user_id || '');
   db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, row) => {
   if (err) return res.status(500).json({ error: err.message });
   if (!row) return res.status(404).json({ error: 'Игрок не найден' });

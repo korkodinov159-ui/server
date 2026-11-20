@@ -1111,6 +1111,8 @@ html, body {
 
 
 
+html, body { background-image: url('/bg.png') !important; }
+
 /* Unified Coin Empire theme overrides */
 :root { --ce-bg:#080b14; --ce-surface:rgba(16,22,38,.88); --ce-surface-strong:rgba(20,28,48,.96); --ce-border:rgba(126,154,255,.22); --ce-text:#f4f7ff; --ce-muted:#9aa8c2; --ce-primary:#6e88ff; --ce-primary-dark:#4d65dc; --ce-cyan:#56d8e8; --ce-radius-sm:12px; --ce-radius-md:18px; --ce-radius-lg:24px; --ce-shadow:0 18px 44px rgba(0,0,0,.28); }
 html,body { background-color:var(--ce-bg)!important; color:var(--ce-text)!important; font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
@@ -1127,6 +1129,10 @@ body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index
 .custom-input,.custom-input input,input { min-height:46px; color:var(--ce-text)!important; background:rgba(6,10,20,.68)!important; border:1px solid rgba(255,255,255,.09)!important; border-radius:var(--ce-radius-sm)!important; }
 .custom-tabbar { height:76px!important; padding:8px 12px calc(8px + env(safe-area-inset-bottom))!important; background:rgba(8,12,24,.92)!important; border:1px solid var(--ce-border)!important; border-bottom:0!important; border-radius:24px 24px 0 0; box-shadow:0 -14px 34px rgba(0,0,0,.28); backdrop-filter:blur(22px); }
 .tab-item { min-width:60px; min-height:52px; border-radius:14px; color:var(--ce-muted)!important; }
+.custom-tabbar { height:60px!important; padding:4px 8px calc(4px + env(safe-area-inset-bottom))!important; border-radius:18px 18px 0 0; }
+.tab-item { min-width:48px; min-height:44px; font-size:9px; }
+.tab-icon { font-size:18px; margin-bottom:1px; }
+
 .tab-item.active { color:var(--ce-text)!important; background:rgba(110,136,255,.18); box-shadow:inset 0 0 0 1px rgba(110,136,255,.28); }
 .market-hero,.auction-page > div:first-child,.ranking-page > div:first-child { padding:20px!important; border-radius:var(--ce-radius-lg)!important; background:linear-gradient(135deg,rgba(39,56,104,.74),rgba(15,23,45,.9))!important; border:1px solid var(--ce-border)!important; box-shadow:var(--ce-shadow); }
 .season-progress,.profile-progress { background:rgba(4,8,18,.72)!important; border-radius:999px!important; }
