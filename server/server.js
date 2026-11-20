@@ -307,13 +307,6 @@ app.post('/api/regions/collect', (req, res) => {
   });
 });
 
-app.get('/api/market', (req, res) => {
-  db.all(`SELECT * FROM market_lots WHERE (status='active' OR status IS NULL OR status='') ORDER BY created_at DESC`, [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json((rows || []).map((row) => ({ ...row, character: JSON.parse(row.character || '{}') })));
-  });
-});
-
   db.all(`SELECT * FROM market_lots WHERE (status='active' OR status IS NULL OR status='') ORDER BY created_at DESC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json((rows || []).map((row) => ({ ...row, character: JSON.parse(row.character || '{}') })));

@@ -1,4 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
+
+
+import { Icon24Coins } from '@vkontakte/icons';
 import { Panel, PanelHeader, Div, Avatar, Input } from '@vkontakte/vkui';
 import { Icon24Coins } from '@vkontakte/icons';
 import { useGame } from '../store/gameStore';

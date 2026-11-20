@@ -59,6 +59,7 @@ export interface Resources {
   food: number;
 }
 
+export interface Player {
   name: string;
   avatar: string;
   coins: number;
@@ -69,7 +70,6 @@ export interface Resources {
   lastCollectAt: number;
   maxCharacters: number;
   limitLevel: number;
-
   hasWhip: boolean;
   hasChains: boolean;
   hasShield: boolean;
@@ -77,21 +77,17 @@ export interface Resources {
   avatarFrame: 'none' | 'gold' | 'neon' | 'flame';
   lastChestOpen: number;
   totalEarned: number;
-
   lastDailyClaimAt: number;
   dailyStreak: number;
   lastDailyDay: string;
-
   myRefCode: string;
   invitedBy: string | null;
   referrals: ReferralInfo[];
   referralEarned: number;
-
   careerLevel: number;
   lastStoryShareAt: number;
   adViewsToday: number;
   lastAdViewDay: string;
-
   ownedByVkId: string | null;
   adIncomeBuffMultiplier: number;
   adIncomeBuffExpiresAt: number;
