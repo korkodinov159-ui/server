@@ -123,12 +123,8 @@ db.serialize(() => {
   `ALTER TABLE players ADD COLUMN ad_income_buff_expires_at INTEGER DEFAULT 0`,
   `ALTER TABLE players ADD COLUMN ad_views_today INTEGER DEFAULT 0`,
   `ALTER TABLE players ADD COLUMN ad_views_day TEXT DEFAULT ''`,
-
-[
   `ALTER TABLE players ADD COLUMN clan_role TEXT DEFAULT NULL`,
   `ALTER TABLE players ADD COLUMN clan_joined_at INTEGER DEFAULT 0`,
-].forEach((sql) => db.run(sql, () => {}));
-
 ].forEach((sql) => db.run(sql, () => {}));
 
 // Дополнительные поля и таблицы экономики.
