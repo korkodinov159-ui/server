@@ -308,7 +308,7 @@ app.post('/api/character/buyout-self', (req, res) => {
 
 
 app.post('/api/career/claim', (req, res) => {
-  const vkId = economyUser(req);
+  const vkId = econUser(req);
   const levels = [
     [0, 0, 0, 10000, 0], [500000, 10, 1000000, 50000, 5], [5000000, 50, 10000000, 250000, 10],
     [25000000, 100, 50000000, 1000000, 20], [100000000, 500, 250000000, 5000000, 50],
