@@ -45,7 +45,6 @@ const VK_FRAME_PRODUCTS: Record<'gold' | 'neon' | 'flame', { productId: string; 
 const DAILY_RESET_HOURS = 48;
 
 function getTodayKey(): string { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
-function getYesterdayKey(): string { const d = new Date(); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function rand<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
 function uid() { return Math.random().toString(36).slice(2, 10); }
 
@@ -221,7 +220,6 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // === ЕЖЕДНЕВНЫЙ ===
   const todayKey = getTodayKey();
-  const yesterdayKey = getYesterdayKey();
   const isNewDay = player.lastDailyDay !== todayKey;
   const hoursSinceLastClaim = player.lastDailyClaimAt ? (Date.now() - player.lastDailyClaimAt) / 3600000 : Infinity;
   let effectiveStreak = player.dailyStreak;
