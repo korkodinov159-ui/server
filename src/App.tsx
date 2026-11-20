@@ -16,7 +16,6 @@ import { Auction } from './panels/Auction';
 import { Shop } from './panels/Shop';
 
 import { Regions } from './panels/Regions';
-import { Shop } from './panels/Shop';
 
 
 import { ClanDetails } from './panels/ClanDetails';
