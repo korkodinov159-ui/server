@@ -1,7 +1,11 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+const fs = require('fs');
+const path = require('path');
+
+const configuredDbPath = process.env.DB_PATH || path.join(__dirname, 'game.db');
+fs.mkdirSync(path.dirname(configuredDbPath), { recursive: true });
 
 const app = express();
 const allowedOrigins = [
@@ -25,7 +29,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-const db = new sqlite3.Database('./game.db');
+const db = new sqlite3.Database(configuredDbPath);
 
 // Создаем таблицы (только самое необходимое)
 db.serialize(() => {
@@ -167,7 +171,7 @@ db.run(`CREATE TABLE IF NOT EXISTS economy_transactions (
 )`);
 
 
-db.run(`DELETE FROM players WHERE vk_id LIKE 'demo-%' OR vk_id='local-test-user'`);
+
 
 db.run(`ALTER TABLE market_lots ADD COLUMN status TEXT DEFAULT 'active'`, () => {
   db.run(`UPDATE market_lots SET status='active' WHERE status IS NULL OR status=''`);
@@ -792,8 +796,8 @@ setTimeout(runAuctionJobs, 1000);
 const port = Number(process.env.PORT) || 3000;
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(`🚀 Сервер слушает 0.0.0.0:${port}; PORT=${process.env.PORT || '3000'}`);
+  console.log(`🗄️ База данных: ${configuredDbPath}`);
 });
-
 function shutdown(signal) {
   console.log(`Получен ${signal}, завершаю сервер`);
   server.close(() => process.exit(0));
