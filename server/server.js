@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
@@ -5,6 +6,10 @@ const sqlite3 = require('sqlite3').verbose();
 const app = express();
 const allowedOrigins = [
   'https://korkodinov159-ui-vk-impire-3583.twc1.net',
+  'https://vk.com',
+  'https://m.vk.com',
+  'https://vk.ru',
+  'https://m.vk.ru',
   'http://localhost:5173',
   'http://localhost:4173',
 ];
