@@ -3,7 +3,21 @@ const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
-app.use(cors());
+const allowedOrigins = [
+  'https://korkodinov159-ui-vk-impire-3583.twc1.net',
+  'http://localhost:5173',
+  'http://localhost:4173',
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('CORS origin is not allowed'));
+  },
+}));
 app.use(express.json());
 
 const db = new sqlite3.Database('./game.db');
@@ -560,7 +574,8 @@ function runAuctionJobs() {
 }
 setInterval(runAuctionJobs, 30000);
 setTimeout(runAuctionJobs, 1000);
-app.listen(3001, () => console.log('🚀 Сервер: http://localhost:3001'));
+const port = Number(process.env.PORT) || 3001;
+app.listen(port, () => console.log(`🚀 Сервер: http://localhost:${port}`));
 
 
 
