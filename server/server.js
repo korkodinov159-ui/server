@@ -572,7 +572,18 @@ function runAuctionJobs() {
 setInterval(runAuctionJobs, 30000);
 setTimeout(runAuctionJobs, 1000);
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, '0.0.0.0', () => console.log(`🚀 Сервер слушает 0.0.0.0:${port}`));
+const server = app.listen(port, '0.0.0.0', () => {
+  console.log(`🚀 Сервер слушает 0.0.0.0:${port}; PORT=${process.env.PORT || '3000'}`);
+});
+
+function shutdown(signal) {
+  console.log(`Получен ${signal}, завершаю сервер`);
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 10000).unref();
+}
+
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
 
 
 
