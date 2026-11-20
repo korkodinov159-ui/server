@@ -153,7 +153,9 @@ db.run(`CREATE TABLE IF NOT EXISTS economy_transactions (
 db.run(`DELETE FROM players WHERE vk_id LIKE 'demo-%' OR vk_id='local-test-user'`);
 db.run(`DELETE FROM market_lots WHERE seller_vk_id='system' OR id LIKE 'server-lot-%'`);
 
-db.run(`ALTER TABLE market_lots ADD COLUMN status TEXT DEFAULT 'active'`, () => {});
+db.run(`ALTER TABLE market_lots ADD COLUMN status TEXT DEFAULT 'active'`, () => {
+  db.run(`UPDATE market_lots SET status='active' WHERE status IS NULL OR status=''`);
+});
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
@@ -186,7 +188,7 @@ app.get('/api/player/:vkId', (req, res) => {
 });
 
 app.get('/api/market', (req, res) => {
-  db.all(`SELECT * FROM market_lots WHERE status='active' ORDER BY created_at DESC`, [], (err, rows) => {
+  db.all(`SELECT * FROM market_lots WHERE (status='active' OR status IS NULL OR status='') ORDER BY created_at DESC`, [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json((rows || []).map((row) => ({ ...row, character: JSON.parse(row.character || '{}') })));
   });
@@ -244,7 +246,7 @@ app.post('/api/character/buy', (req, res) => {
   const vkId = econUser(req); const lotId = String(req.body?.lotId || '');
   db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (err, player) => {
     if (err || !player) return res.status(404).json({ error: 'Игрок не найден' });
-    db.get(`SELECT * FROM market_lots WHERE id=? AND status='active'`, [lotId], (lotErr, lot) => {
+    db.get(`SELECT * FROM market_lots WHERE id=? AND (status='active' OR status IS NULL OR status='')`, [lotId], (lotErr, lot) => {
       if (lotErr || !lot) return res.status(404).json({ error: 'Лот не найден' });
       const ch = JSON.parse(lot.character); const price = econPrice(ch); const chars = JSON.parse(player.characters || '[]');
       if (player.coins < price) return res.status(400).json({ error: 'Недостаточно монет', price });
