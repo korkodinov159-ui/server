@@ -124,6 +124,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       try {
+        await apiPost('/sync', { name: vkName, avatar: vkAvatar });
         const data = await apiGet<any>(`/player/${vkId}`);
         const db = loadRefDb();
         const myReferrals: ReferralInfo[] = db.filter((e) => e.referrer === vkId).map((e) => ({ vk_id: e.ref, name: e.name, avatar: e.avatar, totalEarned: e.totalEarned, joinedAt: e.joinedAt, bonusPaid: e.bonusPaid }));
