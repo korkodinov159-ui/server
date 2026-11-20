@@ -44,6 +44,10 @@ db.serialize(() => {
       daily_streak INTEGER DEFAULT 0
     )
   `);
+  db.run(`ALTER TABLE players ADD COLUMN max_characters INTEGER DEFAULT 1000`, () => {
+    db.run(`UPDATE players SET max_characters=1000 WHERE max_characters IS NULL OR max_characters < 1000`);
+  });
+
 
   db.run(`
     CREATE TABLE IF NOT EXISTS clans (
@@ -200,7 +204,7 @@ app.post('/api/sync', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     const finish = () => db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (getErr, player) => getErr ? res.status(500).json({ error: getErr.message }) : res.json({ ...player, slaves: JSON.parse(player.characters || '[]') }));
     if (row) return db.run(`UPDATE players SET name=?, avatar=? WHERE vk_id=?`, [name || row.name, avatar || row.avatar, vkId], finish);
-    db.run(`INSERT INTO players (vk_id,name,avatar,characters,last_income_collect_at) VALUES (?,?,?,?,?)`, [vkId, name || 'Игрок', avatar || '', '[]', Date.now()], (insertErr) => insertErr ? res.status(500).json({ error: insertErr.message }) : finish());
+    db.run(`INSERT INTO players (vk_id,name,avatar,characters,max_characters,last_income_collect_at) VALUES (?,?,?,?,?,?)`, [vkId, name || 'Игрок', avatar || '', '[]', 1000, Date.now()], (insertErr) => insertErr ? res.status(500).json({ error: insertErr.message }) : finish());
   });
 });
 
@@ -211,7 +215,7 @@ app.get('/api/player/:vkId', (req, res) => {
   if (!row) return res.status(404).json({ error: 'Игрок не найден' });
     const chars = JSON.parse(row.characters || '[]');
 
-    res.json({ ...row, slaves: chars, characters: chars, hasShield: Boolean(row.has_shield), isDonutPatron: Boolean(row.is_donut_patron), premium: Boolean(row.premium), lastIncomeCollectAt: row.last_income_collect_at || Date.now() });
+    res.json({ ...row, max_characters: Math.min(50000, Math.max(1000, Number(row.max_characters) || 1000)), slaves: chars, characters: chars, hasShield: Boolean(row.has_shield), isDonutPatron: Boolean(row.is_donut_patron), premium: Boolean(row.premium), lastIncomeCollectAt: row.last_income_collect_at || Date.now() });
 
   });
 });
@@ -278,6 +282,8 @@ app.post('/api/character/buy', (req, res) => {
     db.get(`SELECT * FROM market_lots WHERE id=? AND (status='active' OR status IS NULL OR status='')`, [lotId], (lotErr, lot) => {
       if (lotErr || !lot) return res.status(404).json({ error: 'Лот не найден' });
       const ch = JSON.parse(lot.character); const price = econPrice(ch); const chars = JSON.parse(player.characters || '[]');
+      const maxCharacters = Math.min(50000, Math.max(1000, Number(player.max_characters) || 1000));
+      if (chars.length >= maxCharacters) return res.status(400).json({ error: `Лимит: максимум ${maxCharacters}` });
       if (player.coins < price) return res.status(400).json({ error: 'Недостаточно монет', price });
       ch.ownerVkId = vkId; ch.ownerName = player.name; ch.income = econNextIncome(ch.income); ch.resaleCount = (ch.resaleCount || 0) + 1;
       db.serialize(() => {

@@ -73,7 +73,7 @@ interface GameState {
 
 const defaultPlayer: Player = {
   name: '', avatar: '', coins: 0, gems: 0, votes: 0, characters: [], clanId: null, lastCollectAt: 0,
-  maxCharacters: 0, limitLevel: 0, hasWhip: false, hasChains: false, hasShield: false, hasUmbrella: false, avatarFrame: 'none', lastChestOpen: 0,
+  maxCharacters: 1000, limitLevel: 0, hasWhip: false, hasChains: false, hasShield: false, hasUmbrella: false, avatarFrame: 'none', lastChestOpen: 0,
   totalEarned: 0, lastDailyClaimAt: 0, dailyStreak: 0, lastDailyDay: '', myRefCode: '', invitedBy: null, referrals: [], referralEarned: 0, careerLevel: 0,
   lastStoryShareAt: 0, adViewsToday: 0, lastAdViewDay: '', ownedByVkId: null, adIncomeBuffMultiplier: 1, adIncomeBuffExpiresAt: 0, isDonutPatron: false,
 };
@@ -136,7 +136,8 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           avatar: vkAvatar, 
           coins: data.coins + newbieBonus, 
           votes: data.votes,
-          characters: data.slaves || [], 
+          characters: data.slaves || [],
+          maxCharacters: Math.min(50000, Math.max(1000, Number(data.max_characters) || 1000)),
           hasShield: data.hasShield ?? false,
           clanId: data.clan_id || null, 
           totalEarned: data.total_earned ?? 0,
@@ -383,13 +384,15 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const buyLimitCoins = () => {
     const cost = 50000 * Math.pow(3, player.limitLevel);
     if (player.coins < cost) { notify('Не хватает', `Нужно ${cost.toLocaleString()} 💰`, 'error'); return; }
-    setPlayer({ ...player, coins: player.coins - cost, maxCharacters: player.maxCharacters + 5000, limitLevel: player.limitLevel + 1 });
+    if (player.maxCharacters >= 50000) { notify('Лимит', 'Достигнут максимум 50 000', 'info'); return; }
+    setPlayer({ ...player, coins: player.coins - cost, maxCharacters: Math.min(50000, player.maxCharacters + 5000), limitLevel: player.limitLevel + 1 });
     notify('+5000 к лимиту', `-${cost.toLocaleString()} 💰`, 'success');
   };
   const buyLimitVotes = () => {
     const cost = 100 * Math.pow(3, player.limitLevel);
+    if (player.maxCharacters >= 50000) { notify('Лимит', 'Достигнут максимум 50 000', 'info'); return; }
     if (player.votes < cost) { notify('Не хватает', `Нужно ${cost} 🗳️`, 'error'); return; }
-    setPlayer({ ...player, votes: player.votes - cost, maxCharacters: player.maxCharacters + 5000, limitLevel: player.limitLevel + 1 });
+    setPlayer({ ...player, votes: player.votes - cost, maxCharacters: Math.min(50000, player.maxCharacters + 5000), limitLevel: player.limitLevel + 1 });
     notify('+5000 к лимиту', `-${cost} 🗳️`, 'success');
   };
   const buyBoost = (type: 'whip' | 'chains' | 'shield' | 'umbrella' | 'stone') => {
