@@ -151,11 +151,40 @@ db.run(`CREATE TABLE IF NOT EXISTS economy_transactions (
 
 
 db.run(`DELETE FROM players WHERE vk_id LIKE 'demo-%' OR vk_id='local-test-user'`);
-db.run(`DELETE FROM market_lots WHERE seller_vk_id='system' OR id LIKE 'server-lot-%'`);
 
 db.run(`ALTER TABLE market_lots ADD COLUMN status TEXT DEFAULT 'active'`, () => {
   db.run(`UPDATE market_lots SET status='active' WHERE status IS NULL OR status=''`);
+  ensureSystemMarketLots();
 });
+
+const ensureSystemMarketLots = () => {
+  db.get(`SELECT COUNT(*) AS count FROM market_lots WHERE seller_vk_id='system' AND (status='active' OR status IS NULL OR status='')`, [], (countErr, row) => {
+    if (countErr || Number(row?.count) > 0) return;
+
+    const names = ['Екатерина', 'Зоя', 'Алла', 'Елена', 'Мария', 'София'];
+    const stmt = db.prepare(`INSERT OR IGNORE INTO market_lots (id, seller_vk_id, character, created_at, status) VALUES (?, ?, ?, ?, 'active')`);
+    for (let i = 0; i < 100; i += 1) {
+      const income = Math.min(500, Math.max(1, Math.floor(5 * Math.pow(1.3, i % 18))));
+      const character = {
+        id: `system-character-${i}`,
+        name: names[i % names.length],
+        avatar: `https://api.dicebear.com/9.x/personas/svg?seed=system-character-${i}`,
+        type: 'bot',
+        rarity: i > 80 ? 'Rare' : 'Common',
+        level: 1,
+        basePower: income * 10,
+        income,
+        resaleCount: 0,
+        boughtBySelf: false,
+      };
+      stmt.run(`system-lot-${i}`, 'system', JSON.stringify(character), Date.now());
+    }
+    stmt.finalize();
+  });
+};
+
+ensureSystemMarketLots();
+
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
