@@ -123,6 +123,12 @@ db.serialize(() => {
   `ALTER TABLE players ADD COLUMN ad_income_buff_expires_at INTEGER DEFAULT 0`,
   `ALTER TABLE players ADD COLUMN ad_views_today INTEGER DEFAULT 0`,
   `ALTER TABLE players ADD COLUMN ad_views_day TEXT DEFAULT ''`,
+
+[
+  `ALTER TABLE players ADD COLUMN clan_role TEXT DEFAULT NULL`,
+  `ALTER TABLE players ADD COLUMN clan_joined_at INTEGER DEFAULT 0`,
+].forEach((sql) => db.run(sql, () => {}));
+
 ].forEach((sql) => db.run(sql, () => {}));
 
 // Дополнительные поля и таблицы экономики.
@@ -403,22 +409,53 @@ app.post('/api/daily-bonus', (req, res) => {
 
 // --- API КЛАНОВ ---
 
-// 4. Создание клана
+// Создание клана. Создатель автоматически становится лидером.
 app.post('/api/clan/create', (req, res) => {
-  const { vkId, name, vkGroupId } = req.body;
+  const vkId = econUser(req);
+  const { name, vkGroupId, avatarUrl } = req.body;
+  if (!vkId || !name || !vkGroupId) return res.status(400).json({ error: 'Нужны пользователь VK, название и сообщество' });
   const clanId = Math.random().toString(36).slice(2, 8);
-  const avatarUrl = `https://api.dicebear.com/7.x/shapes/svg?seed=${name}`;
+  const image = String(avatarUrl || `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(vkGroupId)}`);
 
-  db.run(`INSERT INTO clans (id, name, vk_group_id, owner_vk_id, avatar_url) VALUES (?, ?, ?, ?, ?)`, [clanId, name, vkGroupId, vkId, avatarUrl], (err) => {
+  db.get(`SELECT clan_id FROM players WHERE vk_id=?`, [vkId], (lookupErr, player) => {
+    if (lookupErr) return res.status(500).json({ error: lookupErr.message });
+    if (!player) return res.status(404).json({ error: 'Игрок не найден' });
+    if (player.clan_id) return res.status(400).json({ error: 'Вы уже состоите в клане' });
+    db.run(`INSERT INTO clans (id,name,vk_group_id,owner_vk_id,avatar_url) VALUES (?,?,?,?,?)`, [clanId, name.trim(), String(vkGroupId), vkId, image], (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      db.run(`UPDATE players SET clan_id=?, clan_role='leader', clan_joined_at=? WHERE vk_id=?`, [clanId, Date.now(), vkId], (updateErr) => updateErr ? res.status(500).json({ error: updateErr.message }) : res.json({ success: true, clanId, avatarUrl: image }));
+    });
+  });
+});
+
+app.post('/api/clan/join', (req, res) => {
+  const vkId = econUser(req);
+  const clanId = String(req.body?.clanId || '');
+  if (!vkId || !clanId) return res.status(400).json({ error: 'Некорректные данные' });
+  db.get(`SELECT * FROM players WHERE vk_id=?`, [vkId], (playerErr, player) => {
+    if (playerErr || !player) return res.status(404).json({ error: 'Игрок не найден' });
+    if (player.clan_id) return res.status(400).json({ error: 'Вы уже состоите в клане' });
+    db.get(`SELECT c.*, COUNT(p.vk_id) AS member_count FROM clans c LEFT JOIN players p ON p.clan_id=c.id WHERE c.id=? GROUP BY c.id`, [clanId], (clanErr, clan) => {
+      if (clanErr || !clan) return res.status(404).json({ error: 'Клан не найден' });
+      const limit = Number(clan.limit || 30);
+      if (Number(clan.member_count) >= limit) return res.status(400).json({ error: 'В клане нет мест' });
+      db.run(`UPDATE players SET clan_id=?, clan_role='member', clan_joined_at=? WHERE vk_id=?`, [clanId, Date.now(), vkId], (updateErr) => updateErr ? res.status(500).json({ error: updateErr.message }) : res.json({ success: true, clanId }));
+    });
+  });
+});
+
+app.post('/api/clan/leave', (req, res) => {
+  const vkId = econUser(req);
+  db.run(`UPDATE players SET clan_id=NULL, clan_role=NULL, clan_joined_at=0 WHERE vk_id=? AND clan_role!='leader'`, [vkId], function (err) {
     if (err) return res.status(500).json({ error: err.message });
-    db.run(`UPDATE players SET clan_id = ? WHERE vk_id = ?`, [clanId, vkId]);
-    res.json({ success: true, clanId });
+    if (!this.changes) return res.status(400).json({ error: 'Лидер не может выйти из клана' });
+    res.json({ success: true });
   });
 });
 
 // 5. Список кланов
 app.get('/api/clans', (req, res) => {
-  db.all(`SELECT c.*, COALESCE(SUM(p.total_earned),0) AS total_earned, COUNT(p.vk_id) AS member_count FROM clans c LEFT JOIN players p ON p.clan_id=c.id GROUP BY c.id ORDER BY total_earned DESC`, [], (err, rows) => {
+    db.all(`SELECT c.*, COALESCE(SUM(p.total_earned),0) AS total_earned, COUNT(p.vk_id) AS member_count FROM clans c LEFT JOIN players p ON p.clan_id=c.id GROUP BY c.id ORDER BY total_earned DESC`, [], (err, rows) => {
 
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
@@ -430,7 +467,7 @@ app.get('/api/clan/:clanId', (req, res) => {
   const { clanId } = req.params;
   db.get(`SELECT * FROM clans WHERE id = ?`, [clanId], (err, clan) => {
     if (err || !clan) return res.status(404).json({ error: 'Клан не найден' });
-    db.all(`SELECT vk_id, name, avatar, coins, characters FROM players WHERE clan_id = ? ORDER BY coins DESC`, [clanId], (err, members) => {
+    db.all(`SELECT vk_id, name, avatar, coins, characters, clan_role, clan_joined_at FROM players WHERE clan_id = ? ORDER BY coins DESC`, [clanId], (err, members) => {
       if (err) return res.status(500).json({ error: err.message });
       res.json({
         ...clan,

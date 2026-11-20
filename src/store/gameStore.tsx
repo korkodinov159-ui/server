@@ -363,7 +363,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createClan = async (name: string, vkGroupId: string) => {
     if (player.coins < CLAN_CREATE_COST) { notify('Не хватает', `Нужно ${CLAN_CREATE_COST} 💰`, 'error'); return; }
     try {
-      const data = await apiPost<{ clanId: string }>('/clan/create', { name, vkGroupId });
+      const data = await apiPost<{ clanId: string }>('/clan/create', { name, vkGroupId, avatarUrl: `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(vkGroupId)}` });
       setClans([...clans, { id: data.clanId, name, emoji: '🛡️', members: [player.name], bonusPercent: 8 }]);
       setPlayer({ ...player, coins: player.coins - CLAN_CREATE_COST, clanId: data.clanId });
       notify('Клан создан', name, 'success');
